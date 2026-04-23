@@ -18,8 +18,9 @@ type mockProvider struct {
 	completeResp *provider.Response
 }
 
-func (m *mockProvider) ID() string   { return m.id }
-func (m *mockProvider) Type() string { return "mock" }
+func (m *mockProvider) ID() string       { return m.id }
+func (m *mockProvider) Type() string     { return "mock" }
+func (m *mockProvider) Endpoint() string { return "http://mock" }
 func (m *mockProvider) Complete(_ context.Context, _ *provider.Request) (*provider.Response, error) {
 	return m.completeResp, m.completeErr
 }

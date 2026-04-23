@@ -17,8 +17,9 @@ type stubProvider struct {
 	err error
 }
 
-func (s *stubProvider) ID() string   { return s.id }
-func (s *stubProvider) Type() string { return "stub" }
+func (s *stubProvider) ID() string       { return s.id }
+func (s *stubProvider) Type() string     { return "stub" }
+func (s *stubProvider) Endpoint() string { return "http://stub" }
 func (s *stubProvider) Complete(_ context.Context, _ *provider.Request) (*provider.Response, error) {
 	return nil, errors.New("not implemented")
 }

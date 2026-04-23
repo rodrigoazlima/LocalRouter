@@ -10,6 +10,7 @@ import (
 type Provider interface {
 	ID() string
 	Type() string
+	Endpoint() string
 	Complete(ctx context.Context, req *Request) (*Response, error)
 	Stream(ctx context.Context, req *Request) (<-chan Chunk, error)
 	HealthCheck(ctx context.Context) error

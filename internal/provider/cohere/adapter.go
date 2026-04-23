@@ -33,8 +33,9 @@ func New(id, apiKey, endpoint string) *Adapter {
 	}
 }
 
-func (a *Adapter) ID() string   { return a.id }
-func (a *Adapter) Type() string { return "cohere" }
+func (a *Adapter) ID() string       { return a.id }
+func (a *Adapter) Type() string     { return "cohere" }
+func (a *Adapter) Endpoint() string { return a.endpoint }
 
 type cohReq struct {
 	Model    string   `json:"model"`

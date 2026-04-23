@@ -4,10 +4,12 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/rodrigoazlima/localrouter/internal/provider"
+	"github.com/rodrigoazlima/localrouter/internal/reqid"
 )
 
 type completionRequest struct {
@@ -56,6 +58,14 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id := reqid.New()
+	clientIP := r.RemoteAddr
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		clientIP = xff
+	}
+	log.Printf("[%s] IN from=%s model=%q stream=%v", id, clientIP, req.Model, req.Stream)
+
+	ctx := reqid.With(r.Context(), id)
 	provReq := &provider.Request{
 		Model:    req.Model,
 		Messages: req.Messages,
@@ -63,10 +73,10 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !req.Stream {
-		s.handleComplete(w, r, provReq)
+		s.handleComplete(w, r.WithContext(ctx), provReq)
 		return
 	}
-	s.handleStream(w, r, provReq)
+	s.handleStream(w, r.WithContext(ctx), provReq)
 }
 
 func (s *Server) handleComplete(w http.ResponseWriter, r *http.Request, req *provider.Request) {

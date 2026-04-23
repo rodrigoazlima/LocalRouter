@@ -4,12 +4,14 @@ package router
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 
 	"github.com/rodrigoazlima/localrouter/internal/cache"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
 	"github.com/rodrigoazlima/localrouter/internal/provider"
+	"github.com/rodrigoazlima/localrouter/internal/reqid"
 )
 
 var ErrAllProvidersFailed = errors.New("all providers failed or unavailable")
@@ -48,6 +50,7 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 	fallback := r.fallbackEnabled
 	r.mu.RUnlock()
 
+	rid := reqid.From(ctx)
 	for _, p := range locals {
 		if !r.health.IsReady(p.ID()) {
 			continue
@@ -56,8 +59,10 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 		if err == nil {
 			r.metrics.LocalRequests.Add(1)
 			r.cache.Reset4xx(p.ID())
+			log.Printf("[%s] → %s (%s) model=%q tier=local", rid, p.ID(), p.Endpoint(), resp.Model)
 			return resp, nil
 		}
+		log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 		r.metrics.Tier1Failures.Add(1)
 	}
 
@@ -74,8 +79,10 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 		if err == nil {
 			r.metrics.RemoteRequests.Add(1)
 			r.cache.Reset4xx(p.ID())
+			log.Printf("[%s] → %s (%s) model=%q tier=remote", rid, p.ID(), p.Endpoint(), resp.Model)
 			return resp, nil
 		}
+		log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 		r.metrics.Tier2Failures.Add(1)
 		tier := r.classifyError(p.ID(), err)
 		r.cache.Block(p.ID(), tier)
@@ -93,6 +100,7 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 	fallback := r.fallbackEnabled
 	r.mu.RUnlock()
 
+	rid := reqid.From(ctx)
 	for _, p := range locals {
 		if !r.health.IsReady(p.ID()) {
 			continue
@@ -100,8 +108,10 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 		ch, err := p.Stream(ctx, req)
 		if err == nil {
 			r.metrics.LocalRequests.Add(1)
+			log.Printf("[%s] → %s (%s) model=%q tier=local stream=true", rid, p.ID(), p.Endpoint(), req.Model)
 			return ch, nil
 		}
+		log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 		r.metrics.Tier1Failures.Add(1)
 	}
 
@@ -118,8 +128,10 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 		if err == nil {
 			r.metrics.RemoteRequests.Add(1)
 			r.cache.Reset4xx(p.ID())
+			log.Printf("[%s] → %s (%s) model=%q tier=remote stream=true", rid, p.ID(), p.Endpoint(), req.Model)
 			return ch, nil
 		}
+		log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 		r.metrics.Tier2Failures.Add(1)
 		tier := r.classifyError(p.ID(), err)
 		r.cache.Block(p.ID(), tier)

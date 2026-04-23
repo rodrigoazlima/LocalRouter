@@ -21,8 +21,9 @@ import (
 
 type succeedingProvider struct{}
 
-func (s *succeedingProvider) ID() string   { return "ok" }
-func (s *succeedingProvider) Type() string { return "mock" }
+func (s *succeedingProvider) ID() string       { return "ok" }
+func (s *succeedingProvider) Type() string     { return "mock" }
+func (s *succeedingProvider) Endpoint() string { return "http://mock" }
 func (s *succeedingProvider) Complete(_ context.Context, _ *provider.Request) (*provider.Response, error) {
 	return &provider.Response{Content: "Hello!"}, nil
 }
