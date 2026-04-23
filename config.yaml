@@ -1,0 +1,35 @@
+local:
+  nodes:
+    - id: ollama-1
+      type: ollama
+      endpoint: http://localhost:11434
+      timeout_ms: 3000
+    - id: lmstudio-1
+      type: openai-compatible
+      endpoint: http://localhost:1234
+      timeout_ms: 3000
+    - id: vllm-1
+      type: openai-compatible
+      endpoint: http://localhost:8000
+      api_key: ${VLLM_KEY}
+      timeout_ms: 3000
+
+remote:
+  providers:
+    - id: openai-1
+      type: openai-compatible
+      endpoint: https://api.openai.com
+      api_key: ${OPENAI_KEY}
+    - id: anthropic-1
+      type: anthropic
+      api_key: ${ANTHROPIC_KEY}
+    - id: google-1
+      type: google
+      api_key: ${GOOGLE_KEY}
+    - id: cohere-1
+      type: cohere
+      api_key: ${COHERE_KEY}
+
+routing:
+  latency_threshold_ms: 2000
+  fallback_enabled: true
