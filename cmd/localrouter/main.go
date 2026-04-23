@@ -22,6 +22,7 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
+	port := flag.String("port", "8080", "HTTP listen port")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
@@ -57,7 +58,7 @@ func main() {
 	go startup.Run(context.Background(), locals, remotes, mon, c, 10000)
 
 	r := router.New(locals, remotes, c, mon, m, cfg.Routing.FallbackEnabled)
-	srv := server.New(r, mon, c, m)
+	srv := server.New(r, mon, c, m, ":"+*port)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newLocals, err := buildLocals(newCfg)
