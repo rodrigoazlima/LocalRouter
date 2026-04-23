@@ -30,7 +30,8 @@ Key design ideas:
 
 - OpenAI-compatible `/v1/chat/completions` endpoint (streaming and non-streaming)
 - Local provider support: Ollama, LM Studio, vLLM, any OpenAI-compatible server
-- Remote provider support: OpenAI, Anthropic, Google Gemini, Cohere
+- Remote provider support: OpenRouter, Groq, Mistral, DeepSeek, NVIDIA, OpenAI (openai-compatible); Anthropic, Google Gemini, Cohere (native adapters)
+- Per-request structured logging: client IP, request ID, destination provider, endpoint, model, and tier
 - Background per-node health monitoring with exponential backoff
 - TTL-based provider blocking: transient errors (HTTP 429/529, rate-limit body) block for 1 hour; auth/config errors (HTTP 401/403, 3+ consecutive 4xx) block for 24 hours
 - Hot-reload of `config.yaml` via `fsnotify` with 100ms debounce; in-flight requests complete on the previous config
@@ -49,6 +50,8 @@ Key design ideas:
 **CI / offline-first environments**: configure remote providers as last-resort fallback; local inference handles the common case with zero egress.
 
 **Provider resilience**: API key rotation or provider outages are handled automatically through TTL blocking without restarting the proxy.
+
+**Free-tier chaining**: configure multiple free-tier providers (OpenRouter, Groq, Gemini, Mistral, Cohere, NVIDIA) as the fallback chain so paid providers are only reached when all free tiers are exhausted or blocked.
 
 ## Requirements
 
@@ -93,8 +96,13 @@ docker build -t localrouter .
 
 docker run -p 8080:8080 \
   -v "$(pwd)/config.yaml:/config.yaml" \
-  -e OPENAI_KEY=sk-... \
+  -e OPENROUTER_KEY=sk-or-v1-... \
+  -e GROQ_KEY=gsk_... \
+  -e GOOGLE_KEY=AIza... \
+  -e MISTRAL_KEY=... \
+  -e COHERE_KEY=... \
   -e ANTHROPIC_KEY=sk-ant-... \
+  -e OPENAI_KEY=sk-... \
   localrouter -config /config.yaml
 ```
 
@@ -142,15 +150,20 @@ Shut down with `SIGTERM` or `Ctrl+C`. The server drains in-flight requests for u
 
 ### Environment Variables
 
-Environment variables are expanded in `config.yaml` using `${VAR_NAME}` syntax. There are no required environment variables unless your providers need API keys.
+Environment variables are expanded in `config.yaml` using `${VAR_NAME}` syntax. Only set variables for providers you enable. Providers with an empty or missing key will fail with HTTP 401 and be blocked automatically.
 
-| Variable | Description | Default | Required |
+| Variable | Provider | Free tier | Get key |
 |---|---|---|---|
-| `OPENAI_KEY` | API key for OpenAI or compatible provider | — | If using OpenAI |
-| `ANTHROPIC_KEY` | API key for Anthropic | — | If using Anthropic |
-| `GOOGLE_KEY` | API key for Google Gemini | — | If using Google |
-| `COHERE_KEY` | API key for Cohere | — | If using Cohere |
-| `VLLM_KEY` | API key for vLLM (if auth enabled) | — | If vLLM requires auth |
+| `OPENROUTER_KEY` | OpenRouter (500+ models) | ✓ `:free` model pool | console.openrouter.ai |
+| `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 | console.groq.com |
+| `NVIDIA_KEY` | NVIDIA NIM | ✓ free credits | build.nvidia.com |
+| `DEEPSEEK_KEY` | DeepSeek | ✓ | platform.deepseek.com |
+| `GOOGLE_KEY` | Google Gemini | ✓ Flash / Flash-lite | aistudio.google.com/apikey |
+| `COHERE_KEY` | Cohere | ✓ Command R/R+ | dashboard.cohere.com |
+| `MISTRAL_KEY` | Mistral AI | ✓ dev quota | console.mistral.ai |
+| `ANTHROPIC_KEY` | Anthropic (Claude) | — paid | console.anthropic.com |
+| `OPENAI_KEY` | OpenAI | — paid | platform.openai.com |
+| `VLLM_KEY` | vLLM (local, if auth enabled) | n/a local | — |
 
 ### Flags
 
@@ -163,8 +176,8 @@ Environment variables are expanded in `config.yaml` using `${VAR_NAME}` syntax. 
 ```yaml
 local:
   nodes:
-    - id: ollama-1                      # unique identifier
-      type: ollama                      # ollama | openai-compatible
+    - id: ollama-1                       # unique identifier
+      type: ollama                       # ollama | openai-compatible
       endpoint: http://localhost:11434
       timeout_ms: 3000
     - id: lmstudio-1
@@ -174,31 +187,51 @@ local:
     - id: vllm-1
       type: openai-compatible
       endpoint: http://localhost:8000
-      api_key: ${VLLM_KEY}             # optional; supports env expansion
+      api_key: ${VLLM_KEY}              # optional; supports env expansion
       timeout_ms: 3000
 
 remote:
   providers:
+    - id: openrouter-1
+      type: openai-compatible
+      endpoint: https://openrouter.ai/api
+      api_key: ${OPENROUTER_KEY}
+    - id: groq-1
+      type: openai-compatible
+      endpoint: https://api.groq.com/openai
+      api_key: ${GROQ_KEY}
+    - id: nvidia-1
+      type: openai-compatible
+      endpoint: https://integrate.api.nvidia.com
+      api_key: ${NVIDIA_KEY}
+    - id: deepseek-1
+      type: openai-compatible
+      endpoint: https://api.deepseek.com
+      api_key: ${DEEPSEEK_KEY}
+    - id: mistral-1
+      type: openai-compatible
+      endpoint: https://api.mistral.ai
+      api_key: ${MISTRAL_KEY}
     - id: openai-1
-      type: openai-compatible           # openai-compatible | anthropic | google | cohere
+      type: openai-compatible
       endpoint: https://api.openai.com
       api_key: ${OPENAI_KEY}
-    - id: anthropic-1
-      type: anthropic
-      api_key: ${ANTHROPIC_KEY}
     - id: google-1
-      type: google
+      type: google                       # openai-compatible | anthropic | google | cohere
       api_key: ${GOOGLE_KEY}
     - id: cohere-1
       type: cohere
       api_key: ${COHERE_KEY}
+    - id: anthropic-1
+      type: anthropic
+      api_key: ${ANTHROPIC_KEY}
 
 routing:
-  latency_threshold_ms: 2000           # latency above this marks a node DEGRADED
-  fallback_enabled: true               # set false to disable remote fallback entirely
+  latency_threshold_ms: 2000            # latency above this marks a node DEGRADED
+  fallback_enabled: true                # set false to disable remote fallback entirely
 ```
 
-Nodes and providers are tried in the order listed. The first successful response wins. Edit `config.yaml` while LocalRouter is running; changes take effect within ~100ms without restarting.
+Nodes and providers are tried in the order listed. First successful response wins. Hot-reload on save (~100ms, no restart).
 
 ### Minimal Example
 

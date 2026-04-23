@@ -21,7 +21,10 @@ type Server struct {
 	metrics *metrics.Collector
 }
 
-func New(r *router.Router, mon *health.Monitor, c *cache.Cache, m *metrics.Collector) *Server {
+func New(r *router.Router, mon *health.Monitor, c *cache.Cache, m *metrics.Collector, addr string) *Server {
+	if addr == "" {
+		addr = ":8080"
+	}
 	s := &Server{router: r, monitor: mon, cache: c, metrics: m}
 
 	mux := chi.NewRouter()
@@ -30,6 +33,6 @@ func New(r *router.Router, mon *health.Monitor, c *cache.Cache, m *metrics.Colle
 	mux.Get("/metrics", s.handleMetrics)
 	mux.Post("/v1/chat/completions", s.handleCompletions)
 
-	s.Server = &http.Server{Addr: ":8080", Handler: mux}
+	s.Server = &http.Server{Addr: addr, Handler: mux}
 	return s
 }

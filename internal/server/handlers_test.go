@@ -17,7 +17,7 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 	m := metrics.New()
 	c := cache.New()
 	mon := health.New(m, 2000)
-	srv := server.New(nil, mon, c, m)
+	srv := server.New(nil, mon, c, m, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
@@ -41,7 +41,7 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 func TestMetricsEndpoint_ReturnsJSON(t *testing.T) {
 	m := metrics.New()
 	m.LocalRequests.Add(5)
-	srv := server.New(nil, health.New(m, 2000), cache.New(), m)
+	srv := server.New(nil, health.New(m, 2000), cache.New(), m, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()

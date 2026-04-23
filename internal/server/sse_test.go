@@ -45,7 +45,7 @@ func buildTestServer(p provider.Provider) *server.Server {
 	c := cache.New()
 	mon := health.New(m, 2000)
 	r := router.New([]provider.Provider{p}, nil, c, &alwaysReady{}, m, true)
-	return server.New(r, mon, c, m)
+	return server.New(r, mon, c, m, "")
 }
 
 func TestCompletions_NonStream_ReturnsJSON(t *testing.T) {
