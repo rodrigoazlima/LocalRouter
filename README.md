@@ -1,5 +1,13 @@
 # LocalRouter
 
+```
+ _                    _ ____             _
+ | |    ___   ___ __ _| |  _ \ ___  _   _| |_ ___ _ __
+ | |   / _ \ / __/ _` | | |_) / _ \| | | | __/ _ \ '__|
+ | |__| (_) | (_| (_| | |  _ < (_) | |_| | ||  __/ |
+ |_____\___/ \___\__,_|_|_| \_\___/ \__,_|\__\___|_|
+```
+
 Local-first LLM routing proxy with intelligent failover and error-aware provider blocking.
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/rodrigoazlima/localrouter/ci.yml?branch=master)](https://github.com/rodrigoazlima/localrouter/actions)
