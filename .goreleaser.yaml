@@ -27,7 +27,7 @@ builds:
 
 archives:
   - id: localrouter
-    builds:
+    ids:
       - localrouter
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
