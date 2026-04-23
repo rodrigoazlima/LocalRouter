@@ -26,10 +26,48 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: test/e2e/package-lock.json
+
+      - name: Install dependencies
+        working-directory: test/e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: test/e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: test/e2e
+        run: npx playwright test --reporter=github
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: test/e2e/playwright-report/
+          retention-days: 7
+
   snapshot:
     name: Build snapshot
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, e2e]
     steps:
       - uses: actions/checkout@v4
         with:
