@@ -57,6 +57,26 @@ func TestMonitor_BecomesUnavailableAfterFailures(t *testing.T) {
 	}
 }
 
+func TestMonitor_SetReady_ImmediatelyReady(t *testing.T) {
+	m := health.New(metrics.New(), 2000)
+	n := &stubNode{id: "n1", err: nil}
+	m.AddNode("n1", n, 100, 60000) // 60s interval: background won't fire during test
+
+	if m.IsReady("n1") {
+		t.Fatal("expected StateUnavailable before SetReady")
+	}
+	m.SetReady("n1")
+	if !m.IsReady("n1") {
+		t.Fatal("expected StateReady after SetReady")
+	}
+	m.Stop()
+}
+
+func TestMonitor_SetReady_NoopOnUnknownID(t *testing.T) {
+	m := health.New(metrics.New(), 2000)
+	m.SetReady("does-not-exist") // must not panic
+}
+
 func TestMonitor_RemoveNode_StopsWorker(t *testing.T) {
 	mp := &stubNode{id: "n1", err: nil}
 	m := health.New(metrics.New(), 2000)

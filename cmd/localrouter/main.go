@@ -17,6 +17,7 @@ import (
 	"github.com/rodrigoazlima/localrouter/internal/provider/factory"
 	"github.com/rodrigoazlima/localrouter/internal/router"
 	"github.com/rodrigoazlima/localrouter/internal/server"
+	"github.com/rodrigoazlima/localrouter/internal/startup"
 )
 
 func main() {
@@ -52,6 +53,8 @@ func main() {
 		}
 		mon.AddNode(n.ID, p, n.TimeoutMs, 10000)
 	}
+
+	go startup.Run(context.Background(), locals, remotes, mon, c, 10000)
 
 	r := router.New(locals, remotes, c, mon, m, cfg.Routing.FallbackEnabled)
 	srv := server.New(r, mon, c, m)

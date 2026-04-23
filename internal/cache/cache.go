@@ -58,6 +58,12 @@ func (c *Cache) Block(id string, tier Tier) {
 	c.BlockUntil(id, tier, time.Now().Add(ttl))
 }
 
+func (c *Cache) Unblock(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.entries, id)
+}
+
 func (c *Cache) BlockUntil(id string, tier Tier, expiresAt time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

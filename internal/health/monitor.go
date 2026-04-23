@@ -104,6 +104,20 @@ func (mon *Monitor) Stop() {
 	}
 }
 
+func (mon *Monitor) SetReady(id string) {
+	mon.mu.Lock()
+	defer mon.mu.Unlock()
+	s, ok := mon.states[id]
+	if !ok {
+		return
+	}
+	s.State = StateReady
+	s.successRun = successThreshold
+	s.failureRun = 0
+	s.latencyBreaches = 0
+	mon.states[id] = s
+}
+
 func (mon *Monitor) runNode(ctx context.Context, id string, hc HealthChecker, timeoutMs, intervalMs int) {
 	base := time.Duration(intervalMs) * time.Millisecond
 	backoff := base

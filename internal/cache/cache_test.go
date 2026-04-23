@@ -77,3 +77,20 @@ func TestCache_Reset4xx_ResetsCounter(t *testing.T) {
 		t.Fatalf("after reset, 1st 4xx must be TierA, got %v", tier)
 	}
 }
+
+func TestCache_Unblock_ClearsBlock(t *testing.T) {
+	c := cache.New()
+	c.Block("p1", cache.TierA)
+	if !c.IsBlocked("p1") {
+		t.Fatal("expected p1 blocked before Unblock")
+	}
+	c.Unblock("p1")
+	if c.IsBlocked("p1") {
+		t.Fatal("expected p1 unblocked after Unblock")
+	}
+}
+
+func TestCache_Unblock_NoopOnMissing(t *testing.T) {
+	c := cache.New()
+	c.Unblock("nonexistent") // must not panic
+}
