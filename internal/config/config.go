@@ -9,20 +9,54 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration structure (version 2 only).
+// Config is the top-level configuration structure.
+// Supports two schemas:
+//   - Version 2 (old): version: 2, routing.default_model, flat providers[] with models.
+//   - New (no version): local.nodes + remote.providers, no models required.
 type Config struct {
 	Version   int              `yaml:"version"`
 	Routing   RoutingConfig    `yaml:"routing"`
-	Providers []ProviderConfig `yaml:"providers"`
+	Providers []ProviderConfig `yaml:"providers"` // old schema; populated by normaliseNewSchema for new schema
+	Local     LocalConfig      `yaml:"local"`     // new schema
+	Remote    RemoteConfig     `yaml:"remote"`    // new schema
 }
 
 // RoutingConfig holds global routing parameters.
 type RoutingConfig struct {
 	DefaultModel       string `yaml:"default_model"`
 	LatencyThresholdMs int    `yaml:"latency_threshold_ms"`
+	FallbackEnabled    bool   `yaml:"fallback_enabled"`
 }
 
-// ProviderConfig describes a single LLM provider.
+// LocalConfig contains local node definitions (new schema).
+type LocalConfig struct {
+	Nodes []LocalNodeConfig `yaml:"nodes"`
+}
+
+// LocalNodeConfig describes a locally-running LLM node (new schema).
+type LocalNodeConfig struct {
+	ID        string `yaml:"id"`
+	Type      string `yaml:"type"`
+	Endpoint  string `yaml:"endpoint"`
+	TimeoutMs int    `yaml:"timeout_ms"`
+	APIKey    string `yaml:"api_key"`
+}
+
+// RemoteConfig contains remote provider definitions (new schema).
+type RemoteConfig struct {
+	Providers []RemoteProviderConfig `yaml:"providers"`
+}
+
+// RemoteProviderConfig describes a remote LLM API provider (new schema).
+type RemoteProviderConfig struct {
+	ID        string `yaml:"id"`
+	Type      string `yaml:"type"`
+	Endpoint  string `yaml:"endpoint"`
+	APIKey    string `yaml:"api_key"`
+	TimeoutMs int    `yaml:"timeout_ms"`
+}
+
+// ProviderConfig describes a single LLM provider (used internally after normalisation).
 type ProviderConfig struct {
 	ID             string        `yaml:"id"`
 	Type           string        `yaml:"type"`
@@ -32,6 +66,7 @@ type ProviderConfig struct {
 	RecoveryWindow string        `yaml:"recovery_window"`
 	Limits         *LimitsConfig `yaml:"limits"`
 	Models         []ModelConfig `yaml:"models"`
+	IsRemote       bool          `yaml:"-"` // true for remote providers (new schema)
 	// Skipped is true when api_key was present in the YAML but resolved to empty
 	// after environment variable expansion.
 	Skipped bool `yaml:"-"`
@@ -112,35 +147,104 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	// Mark providers as skipped when api_key was present in YAML but expanded to empty.
-	for i := range cfg.Providers {
-		p := &cfg.Providers[i]
-		if rawKey, had := rawAPIKeys[p.ID]; had && rawKey != "" && p.APIKey == "" {
-			p.Skipped = true
+	if isNewSchema(&cfg) {
+		if err := normaliseNewSchema(&cfg); err != nil {
+			return nil, err
 		}
-	}
+		if err := validateNewSchema(&cfg); err != nil {
+			return nil, err
+		}
+	} else {
+		// Mark providers as skipped when api_key was present in YAML but expanded to empty.
+		for i := range cfg.Providers {
+			p := &cfg.Providers[i]
+			if rawKey, had := rawAPIKeys[p.ID]; had && rawKey != "" && p.APIKey == "" {
+				p.Skipped = true
+			}
+		}
 
-	if err := parseDurations(&cfg); err != nil {
-		return nil, err
-	}
+		if err := parseDurations(&cfg); err != nil {
+			return nil, err
+		}
 
-	if err := validate(&cfg); err != nil {
-		return nil, err
+		if err := validate(&cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	return &cfg, nil
 }
 
+// isNewSchema returns true when the config uses the local/remote section layout.
+func isNewSchema(cfg *Config) bool {
+	return len(cfg.Local.Nodes) > 0 || len(cfg.Remote.Providers) > 0
+}
+
+// normaliseNewSchema converts local/remote sections into the flat Providers slice.
+func normaliseNewSchema(cfg *Config) error {
+	priority := 1
+	for _, n := range cfg.Local.Nodes {
+		cfg.Providers = append(cfg.Providers, ProviderConfig{
+			ID:        n.ID,
+			Type:      n.Type,
+			Endpoint:  n.Endpoint,
+			TimeoutMs: n.TimeoutMs,
+			APIKey:    n.APIKey,
+			IsRemote:  false,
+		})
+		priority++
+	}
+	for _, r := range cfg.Remote.Providers {
+		cfg.Providers = append(cfg.Providers, ProviderConfig{
+			ID:        r.ID,
+			Type:      r.Type,
+			Endpoint:  r.Endpoint,
+			TimeoutMs: r.TimeoutMs,
+			APIKey:    r.APIKey,
+			IsRemote:  true,
+		})
+		priority++
+	}
+	return nil
+}
+
+// validateNewSchema enforces rules for the new local/remote schema.
+func validateNewSchema(cfg *Config) error {
+	ids := make(map[string]bool)
+	for _, p := range cfg.Providers {
+		if p.ID == "" {
+			return fmt.Errorf("provider missing id")
+		}
+		if ids[p.ID] {
+			return fmt.Errorf("duplicate provider id: %s", p.ID)
+		}
+		ids[p.ID] = true
+		if !validProviderTypes[p.Type] {
+			return fmt.Errorf("provider %q: unknown type %q", p.ID, p.Type)
+		}
+		if endpointRequiredTypes[p.Type] && p.Endpoint == "" {
+			return fmt.Errorf("provider %q (type %q): endpoint is required", p.ID, p.Type)
+		}
+	}
+	return nil
+}
+
 // extractRawAPIKeys parses the YAML without env expansion and returns a map of
 // provider id → raw api_key value (possibly containing ${VAR} references).
 func extractRawAPIKeys(data []byte) (map[string]string, error) {
-	// Use a minimal struct that mirrors the providers list.
 	type rawProvider struct {
+		ID     string `yaml:"id"`
+		APIKey string `yaml:"api_key"`
+	}
+	type rawRemoteProvider struct {
 		ID     string `yaml:"id"`
 		APIKey string `yaml:"api_key"`
 	}
 	type rawConfig struct {
 		Providers []rawProvider `yaml:"providers"`
+		Remote    struct {
+			Providers []rawRemoteProvider `yaml:"providers"`
+		} `yaml:"remote"`
 	}
 
 	var raw rawConfig
@@ -148,8 +252,11 @@ func extractRawAPIKeys(data []byte) (map[string]string, error) {
 		return nil, err
 	}
 
-	result := make(map[string]string, len(raw.Providers))
+	result := make(map[string]string)
 	for _, p := range raw.Providers {
+		result[p.ID] = p.APIKey
+	}
+	for _, p := range raw.Remote.Providers {
 		result[p.ID] = p.APIKey
 	}
 	return result, nil
@@ -181,7 +288,7 @@ func parseDurations(cfg *Config) error {
 	return nil
 }
 
-// validate enforces all schema rules.
+// validate enforces all schema rules for the old (version 2) schema.
 func validate(cfg *Config) error {
 	// Rule 1: version must be 2.
 	if cfg.Version != 2 {
@@ -255,4 +362,3 @@ outer:
 
 	return nil
 }
-

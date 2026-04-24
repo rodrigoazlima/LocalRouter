@@ -41,8 +41,11 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if _, ok := body["providers"]; !ok {
-		t.Fatal("missing 'providers' key in health response")
+	if _, ok := body["local"]; !ok {
+		t.Fatal("missing 'local' key in health response")
+	}
+	if _, ok := body["remote"]; !ok {
+		t.Fatal("missing 'remote' key in health response")
 	}
 }
 

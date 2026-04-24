@@ -20,6 +20,12 @@ var (
 	ErrAllProvidersFailed = errors.New("all providers failed or unavailable")
 )
 
+// tierADuration is the short block duration applied to transient failures and startup probe failures.
+const tierADuration = time.Hour
+
+// tierBDuration is the long block duration applied to auth failures (HTTP 401/403) at request time.
+const tierBDuration = 24 * time.Hour
+
 type Config struct {
 	DefaultModel    string
 	RecoveryWindows map[string]time.Duration
@@ -78,7 +84,7 @@ func (r *Router) resolve(model string) []registry.Entry {
 	}
 }
 
-func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, string, error) {
+func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, registry.Entry, error) {
 	r.mu.RLock()
 	providers := r.providers
 	r.mu.RUnlock()
@@ -97,18 +103,21 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, st
 			r.metrics.ProviderExhaustedEvents.Add(1)
 			continue
 		}
-		return p, e.ModelID, nil
+		return p, e, nil
 	}
-	return nil, "", ErrAllProvidersFailed
+	return nil, registry.Entry{}, ErrAllProvidersFailed
 }
 
-func (r *Router) recoveryWindow(providerID string) time.Duration {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if d, ok := r.cfg.RecoveryWindows[providerID]; ok && d > 0 {
-		return d
+// classifyError returns the block duration for a provider error.
+// HTTP 401/403 at request time → TierB (24 h); everything else → TierA (1 h).
+func classifyError(err error) time.Duration {
+	var httpErr *provider.HTTPError
+	if errors.As(err, &httpErr) {
+		if httpErr.StatusCode == 401 || httpErr.StatusCode == 403 {
+			return tierBDuration
+		}
 	}
-	return time.Hour
+	return tierADuration
 }
 
 func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Response, error) {
@@ -120,26 +129,37 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 	}
 
 	for len(entries) > 0 {
-		p, modelID, err := r.selectProvider(entries)
+		p, entry, err := r.selectProvider(entries)
 		if err != nil {
 			r.metrics.NoCapacity.Add(1)
 			return nil, ErrAllProvidersFailed
 		}
 
 		reqCopy := *req
-		reqCopy.Model = modelID
+		reqCopy.Model = entry.ModelID
 
 		resp, err := p.Complete(ctx, &reqCopy)
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
-			r.state.Block(p.ID(), r.recoveryWindow(p.ID()))
+			if entry.IsRemote {
+				r.metrics.Tier2Failures.Add(1)
+			} else {
+				r.metrics.Tier1Failures.Add(1)
+			}
+			blockDur := classifyError(err)
+			r.state.Block(p.ID(), blockDur)
 			r.metrics.ProviderBlockEvents.Add(1)
 			entries = filterProvider(entries, p.ID())
 			continue
 		}
 
 		r.metrics.Requests.Add(1)
+		if entry.IsRemote {
+			r.metrics.RemoteRequests.Add(1)
+		} else {
+			r.metrics.LocalRequests.Add(1)
+		}
 		log.Printf("[%s] → %s model=%q", rid, p.ID(), resp.Model)
 		return resp, nil
 	}
@@ -157,26 +177,37 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 	}
 
 	for len(entries) > 0 {
-		p, modelID, err := r.selectProvider(entries)
+		p, entry, err := r.selectProvider(entries)
 		if err != nil {
 			r.metrics.NoCapacity.Add(1)
 			return nil, ErrAllProvidersFailed
 		}
 
 		reqCopy := *req
-		reqCopy.Model = modelID
+		reqCopy.Model = entry.ModelID
 
 		ch, err := p.Stream(ctx, &reqCopy)
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
-			r.state.Block(p.ID(), r.recoveryWindow(p.ID()))
+			if entry.IsRemote {
+				r.metrics.Tier2Failures.Add(1)
+			} else {
+				r.metrics.Tier1Failures.Add(1)
+			}
+			blockDur := classifyError(err)
+			r.state.Block(p.ID(), blockDur)
 			r.metrics.ProviderBlockEvents.Add(1)
 			entries = filterProvider(entries, p.ID())
 			continue
 		}
 
 		r.metrics.Requests.Add(1)
+		if entry.IsRemote {
+			r.metrics.RemoteRequests.Add(1)
+		} else {
+			r.metrics.LocalRequests.Add(1)
+		}
 		log.Printf("[%s] → %s model=%q stream=true", rid, p.ID(), reqCopy.Model)
 		return ch, nil
 	}

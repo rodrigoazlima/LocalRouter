@@ -6,45 +6,97 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rodrigoazlima/localrouter/internal/health"
 	"github.com/rodrigoazlima/localrouter/internal/state"
 )
 
 // ---- /health ----
 
 type healthResponse struct {
-	Providers []providerHealth `json:"providers"`
+	Local  localHealthInfo  `json:"local"`
+	Remote []remoteHealthInfo `json:"remote"`
 }
 
-type providerHealth struct {
+type localHealthInfo struct {
+	Status string           `json:"status"`
+	Nodes  []localNodeInfo  `json:"nodes"`
+}
+
+type localNodeInfo struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	LatencyMs int64  `json:"latency_ms"`
+}
+
+type remoteHealthInfo struct {
 	ID           string `json:"id"`
-	State        string `json:"state"`
-	LatencyMs    int64  `json:"latency_ms,omitempty"`
-	BlockedUntil string `json:"blocked_until,omitempty"`
+	Status       string `json:"status"`
+	TTLRemaining *int64 `json:"ttl_remaining,omitempty"`
+}
+
+func nodeStateString(s health.NodeState) string {
+	switch s {
+	case health.StateReady:
+		return "ready"
+	case health.StateDegraded:
+		return "degraded"
+	default:
+		return "unavailable"
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	metricsSnap := s.metrics.Snapshot()
-	providerIDs := s.registry.ProviderIDs()
+	monSnap := s.monitor.Snapshot()
 
-	out := make([]providerHealth, 0, len(providerIDs))
-	for _, id := range providerIDs {
-		st := s.state.GetState(id)
-		ph := providerHealth{
+	// Build local node info.
+	localNodes := make([]localNodeInfo, 0)
+	for _, id := range s.registry.LocalIDs() {
+		ns := monSnap[id]
+		localNodes = append(localNodes, localNodeInfo{
 			ID:        id,
-			State:     st.String(),
-			LatencyMs: metricsSnap.Providers[id].LatencyMs,
+			Status:    nodeStateString(ns.State),
+			LatencyMs: ns.LatencyMs,
+		})
+	}
+
+	// Compute overall local status.
+	localStatus := "unavailable"
+	for _, n := range localNodes {
+		if n.Status == "ready" {
+			localStatus = "healthy"
+			break
+		} else if n.Status == "degraded" {
+			localStatus = "degraded"
 		}
-		if st == state.StateBlocked {
-			bu := s.state.BlockedUntil(id)
-			if !bu.IsZero() {
-				ph.BlockedUntil = bu.UTC().Format(time.RFC3339)
-			}
+	}
+	if len(localNodes) == 0 {
+		localStatus = "healthy"
+	}
+
+	// Build remote provider list — only include blocked providers.
+	remoteProviders := make([]remoteHealthInfo, 0)
+	for _, id := range s.registry.RemoteIDs() {
+		st := s.state.GetState(id)
+		if st != state.StateBlocked {
+			continue
 		}
-		out = append(out, ph)
+		bu := s.state.BlockedUntil(id)
+		ttl := int64(time.Until(bu).Seconds())
+		if ttl < 0 {
+			ttl = 0
+		}
+		remoteProviders = append(remoteProviders, remoteHealthInfo{
+			ID:           id,
+			Status:       "blocked",
+			TTLRemaining: &ttl,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(healthResponse{Providers: out})
+	json.NewEncoder(w).Encode(healthResponse{
+		Local:  localHealthInfo{Status: localStatus, Nodes: localNodes},
+		Remote: remoteProviders,
+	})
 }
 
 // ---- /metrics ----

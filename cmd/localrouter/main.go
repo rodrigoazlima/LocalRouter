@@ -46,11 +46,17 @@ func main() {
 		log.Fatalf("build providers: %v", err)
 	}
 
-	runStartupProbes(context.Background(), providers, mon, 10000)
-
 	reg := registry.Build(cfg.Providers, cfg.Routing.DefaultModel)
 	lim := limits.New(limCfgs)
 	st := state.New(mon)
+
+	// Build set of remote provider IDs for startup probe blocking logic.
+	remoteSet := make(map[string]bool, len(reg.RemoteIDs()))
+	for _, id := range reg.RemoteIDs() {
+		remoteSet[id] = true
+	}
+
+	runStartupProbes(context.Background(), providers, mon, st, remoteSet, 10000)
 
 	rCfg := router.Config{
 		DefaultModel:    cfg.Routing.DefaultModel,
@@ -155,22 +161,36 @@ func buildProviders(cfg *config.Config, mon *health.Monitor) (
 	return providers, limCfgs, recWindows, nil
 }
 
-func runStartupProbes(ctx context.Context, providers map[string]provider.Provider, mon *health.Monitor, timeoutMs int) {
+// runStartupProbes probes all providers concurrently.
+// On success: marks the provider ready in the health monitor.
+// On failure for remote providers: applies a TierA block (1 h) via the state manager.
+func runStartupProbes(
+	ctx context.Context,
+	providers map[string]provider.Provider,
+	mon *health.Monitor,
+	st *state.Manager,
+	remoteIDs map[string]bool,
+	timeoutMs int,
+) {
 	var wg sync.WaitGroup
-	for _, p := range providers {
+	for id, p := range providers {
 		wg.Add(1)
-		go func(p provider.Provider) {
+		go func(id string, p provider.Provider) {
 			defer wg.Done()
 			pCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMs)*time.Millisecond)
 			defer cancel()
 			start := time.Now()
 			if err := p.HealthCheck(pCtx); err != nil {
-				log.Printf("[INIT] %s: probe failed: %v", p.ID(), err)
+				log.Printf("[INIT] %s: probe failed: %v", id, err)
+				if remoteIDs[id] {
+					// Block remote providers for TierA duration on startup probe failure.
+					st.Block(id, time.Hour)
+				}
 				return
 			}
-			mon.SetReady(p.ID())
-			log.Printf("[INIT] %s: probe OK (%dms)", p.ID(), time.Since(start).Milliseconds())
-		}(p)
+			mon.SetReady(id)
+			log.Printf("[INIT] %s: probe OK (%dms)", id, time.Since(start).Milliseconds())
+		}(id, p)
 	}
 	wg.Wait()
 }
@@ -185,9 +205,14 @@ func logAvailableProviders(cfg *config.Config, st *state.Manager, reg *registry.
 			}
 			modelList += e.ModelID + "(p=" + strconv.Itoa(e.Priority) + ")"
 		}
+		if modelList == "" {
+			modelList = "(any)"
+		}
 		log.Printf("[INIT] %s: %s — %s", id, s, modelList)
 	}
-	log.Printf("[INIT] default model: %s", cfg.Routing.DefaultModel)
+	if cfg.Routing.DefaultModel != "" {
+		log.Printf("[INIT] default model: %s", cfg.Routing.DefaultModel)
+	}
 }
 
 func providerIDSet(cfg *config.Config) map[string]bool {
