@@ -147,9 +147,11 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 			} else {
 				r.metrics.Tier1Failures.Add(1)
 			}
-			blockDur := classifyError(err)
-			r.state.Block(p.ID(), blockDur)
-			r.metrics.ProviderBlockEvents.Add(1)
+			if entry.IsRemote {
+				blockDur := classifyError(err)
+				r.state.Block(p.ID(), blockDur)
+				r.metrics.ProviderBlockEvents.Add(1)
+			}
 			entries = filterProvider(entries, p.ID())
 			continue
 		}
@@ -195,9 +197,11 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 			} else {
 				r.metrics.Tier1Failures.Add(1)
 			}
-			blockDur := classifyError(err)
-			r.state.Block(p.ID(), blockDur)
-			r.metrics.ProviderBlockEvents.Add(1)
+			if entry.IsRemote {
+				blockDur := classifyError(err)
+				r.state.Block(p.ID(), blockDur)
+				r.metrics.ProviderBlockEvents.Add(1)
+			}
 			entries = filterProvider(entries, p.ID())
 			continue
 		}
