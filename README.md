@@ -8,328 +8,319 @@
  |_____\___/ \___\__,_|_|_| \_\___/ \__,_|\__\___|_|
 ```
 
-Local-first LLM routing proxy with intelligent failover and error-aware provider blocking.
-
 [![Build Status](https://img.shields.io/github/actions/workflow/status/rodrigoazlima/localrouter/ci.yml?branch=master)](https://github.com/rodrigoazlima/localrouter/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/rodrigoazlima/localrouter)](https://github.com/rodrigoazlima/localrouter/releases)
 
-## Overview
+---
 
-LocalRouter sits in front of your local inference servers and remote LLM providers, exposing a single OpenAI-compatible endpoint. Requests flow to local nodes first; remote providers are only reached when local capacity is unavailable or unhealthy.
+## What It Is
 
-Core problem: running Ollama, LM Studio, or vLLM locally reduces cost and latency, but those servers are not always reliable. Without a router, any application has to implement fallback logic itself, and re-implement it every time the provider list changes.
+LocalRouter is a single OpenAI-compatible endpoint that routes every request to the best available LLM provider — local or remote — based on priority, health, and rate limits. Your app talks to one URL. LocalRouter handles the rest.
 
-Key design ideas:
+**Why this exists:** running Ollama or LM Studio locally is fast and free, but those servers go down. Remote APIs have rate limits and cost money. Without a router, every app reimplements the same fallback logic — badly. LocalRouter does it once, correctly, and stays out of the way.
 
-- **Two-tier routing**: Tier 1 exhausts all healthy local nodes before promoting to Tier 2 remote providers.
-- **Error-aware blocking**: provider errors are classified as transient (1-hour block) or persistent (24-hour block), so a broken API key does not keep generating billable failed calls.
-- **Hysteresis health checks**: local nodes cycle through READY / DEGRADED / UNAVAILABLE states with success/failure thresholds to prevent flapping on transient latency spikes.
+**How routing works:**
 
-## Features
+1. Each model has a `priority` (lower = preferred). Providers are tried in priority order.
+2. If a provider is **unhealthy** (health check failures), **exhausted** (rate limit hit), or **blocked** (HTTP error during a request), it is skipped — automatically, without restarts.
+3. `model=auto` tries the globally highest-priority model first, then falls through the full list until something succeeds.
+4. `model=<name>` routes to the lowest-priority provider that has that model and is available.
+5. Empty model uses the configured `default_model`.
 
-- OpenAI-compatible `/v1/chat/completions` endpoint (streaming and non-streaming)
-- Local provider support: Ollama, LM Studio, vLLM, any OpenAI-compatible server
-- Remote provider support: OpenRouter, Groq, Mistral, DeepSeek, NVIDIA, OpenAI (openai-compatible); Anthropic, Google Gemini, Cohere (native adapters)
-- Per-request structured logging: client IP, request ID, destination provider, endpoint, model, and tier
-- Background per-node health monitoring with exponential backoff
-- TTL-based provider blocking: transient errors (HTTP 429/529, rate-limit body) block for 1 hour; auth/config errors (HTTP 401/403, 3+ consecutive 4xx) block for 24 hours
-- Hot-reload of `config.yaml` via `fsnotify` with 100ms debounce; in-flight requests complete on the previous config
-- Environment variable expansion in config (`${OPENAI_KEY}`)
-- `GET /health` — per-node state and provider block status
-- `GET /metrics` — request counts, failure counts, stream counts, per-node latency
-- Single static binary; no external runtime dependencies
-- SSE streaming with 15-second heartbeat to prevent proxy timeouts
+**State machine:** AVAILABLE → BLOCKED (on any HTTP error, clears after `recovery_window`) / EXHAUSTED (on limit hit, clears when window resets) / UNHEALTHY (on consecutive health check failures, clears on recovery).
 
-## Use Cases
+---
 
-**Cost-optimized inference**: run a quantized model on a workstation for most requests; fall back to OpenAI only when the local server is down or overloaded.
+## Quick Setup
 
-**Multi-GPU lab**: route across several Ollama or vLLM instances; the health monitor balances by availability, not explicit load balancing.
+### 1. Install
 
-**CI / offline-first environments**: configure remote providers as last-resort fallback; local inference handles the common case with zero egress.
-
-**Provider resilience**: API key rotation or provider outages are handled automatically through TTL blocking without restarting the proxy.
-
-**Free-tier chaining**: configure multiple free-tier providers (OpenRouter, Groq, Gemini, Mistral, Cohere, NVIDIA) as the fallback chain so paid providers are only reached when all free tiers are exhausted or blocked.
-
-## Requirements
-
-- **OS**: Linux, macOS, Windows
-- **Go**: 1.22 or later (build from source)
-- **Docker**: any recent version (container deployment)
-- At least one configured local node or remote provider
-
-No database, no message broker, no sidecar required. State is in-memory only.
-
-## Installation
-
-### Option 1: Download Release
-
-Pre-built binaries for Linux (amd64/arm64), macOS (amd64/arm64), and Windows (amd64) are available on the [releases page](https://github.com/rodrigoazlima/localrouter/releases).
-
+**Download binary** (Linux, macOS, Windows):
 ```bash
-# Linux amd64 example
+# Linux amd64
 curl -L https://github.com/rodrigoazlima/localrouter/releases/latest/download/localrouter-linux-amd64 \
-  -o localrouter
-chmod +x localrouter
+  -o localrouter && chmod +x localrouter
 ```
 
-### Option 2: Build from Source
-
+**Build from source** (Go 1.22+):
 ```bash
-# Clone
 git clone https://github.com/rodrigoazlima/localrouter.git
 cd localrouter
-
-# Install dependencies
-go mod download
-
-# Build
 go build -o localrouter ./cmd/localrouter
 ```
 
-### Option 3: Docker
-
+**Docker:**
 ```bash
 docker build -t localrouter .
-
-docker run -p 8080:8080 \
-  -v "$(pwd)/config.yaml:/config.yaml" \
-  -e OPENROUTER_KEY=sk-or-v1-... \
-  -e GROQ_KEY=gsk_... \
-  -e GOOGLE_KEY=AIza... \
-  -e MISTRAL_KEY=... \
-  -e COHERE_KEY=... \
-  -e ANTHROPIC_KEY=sk-ant-... \
-  -e OPENAI_KEY=sk-... \
-  localrouter -config /config.yaml
 ```
 
-## Running
+### 2. Configure
 
-```bash
-./localrouter                            # uses ./config.yaml
-./localrouter -config /etc/localrouter/config.yaml
+Create `config.yaml`. Minimal example — one local Ollama, one free remote fallback:
+
+```yaml
+version: 2
+
+routing:
+  default_model: llama3.2:latest
+
+providers:
+  - id: ollama-local
+    type: ollama
+    endpoint: http://localhost:11434
+    timeout_ms: 3000
+    recovery_window: 2m
+    models:
+      - id: llama3.2:latest
+        priority: 1
+        is_free: true
+
+  - id: groq-1
+    type: openai-compatible
+    endpoint: https://api.groq.com/openai/v1
+    api_key: ${GROQ_KEY}
+    limits:
+      requests: 100
+      window: 1m
+    recovery_window: 10m
+    models:
+      - id: llama-3.1-8b-instant
+        priority: 10
+        is_free: true
 ```
 
-LocalRouter listens on `:8080` by default. Send requests to it using any OpenAI-compatible client:
+### 3. Run
 
 ```bash
+GROQ_KEY=gsk_... ./localrouter -config config.yaml
+```
+
+### 4. Send requests
+
+```bash
+# Auto-select best available model
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "auto",
-    "messages": [{"role": "user", "content": "What is the capital of France?"}],
-    "stream": false
-  }'
-```
+  -d '{"model":"auto","messages":[{"role":"user","content":"hi"}]}'
 
-Streaming:
-
-```bash
+# Explicit model
 curl -X POST http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "auto",
-    "messages": [{"role": "user", "content": "Count to five."}],
-    "stream": true
-  }'
+  -d '{"model":"llama3.2:latest","messages":[{"role":"user","content":"hi"}]}'
+
+# List available models
+curl http://localhost:8080/models
 ```
 
-Health and metrics:
+Works with any OpenAI-compatible client — just set `base_url` to `http://localhost:8080`.
 
-```bash
-curl http://localhost:8080/health
-curl http://localhost:8080/metrics
-```
+---
 
-Shut down with `SIGTERM` or `Ctrl+C`. The server drains in-flight requests for up to 30 seconds before exiting.
+## Features
 
-## Configuration
+- **OpenAI-compatible** `/v1/chat/completions` — streaming (SSE) and non-streaming
+- **Priority-based routing** — deterministic, no YAML ordering dependency
+- **Automatic failover** — failed provider blocked for `recovery_window`, next in priority tried immediately
+- **Per-provider rate limits** — fixed-window counter, lazy reset, no background goroutines
+- **`model=auto`** — routes through the global priority list until a provider succeeds
+- **`GET /models`** and **`GET /v1/models`** — lists available (available-state only) providers and models
+- **`GET /health`** — per-provider state (`available` / `unhealthy` / `exhausted` / `blocked`) with latency
+- **`GET /metrics`** — request counts, failures, stream counts, block/exhaustion events, per-provider latency
+- **Hot-reload** — `config.yaml` reloads on save (~100ms debounce, in-flight requests complete on old config)
+- **Provider types**: `ollama`, `openai-compatible`, `anthropic`, `google`, `cohere`, `mistral`
+- **Skipped providers** — if `api_key` is set but resolves to empty (unset env var), provider is silently skipped at startup
+- **SSE heartbeat** — 15-second ping to prevent proxy timeouts
+- Single static binary, no external runtime dependencies
 
-### Environment Variables
+---
 
-Environment variables are expanded in `config.yaml` using `${VAR_NAME}` syntax. Only set variables for providers you enable. Providers with an empty or missing key will fail with HTTP 401 and be blocked automatically.
-
-| Variable | Provider | Free tier | Get key |
-|---|---|---|---|
-| `OPENROUTER_KEY` | OpenRouter (500+ models) | ✓ `:free` model pool | console.openrouter.ai |
-| `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 | console.groq.com |
-| `NVIDIA_KEY` | NVIDIA NIM | ✓ free credits | build.nvidia.com |
-| `DEEPSEEK_KEY` | DeepSeek | ✓ | platform.deepseek.com |
-| `GOOGLE_KEY` | Google Gemini | ✓ Flash / Flash-lite | aistudio.google.com/apikey |
-| `COHERE_KEY` | Cohere | ✓ Command R/R+ | dashboard.cohere.com |
-| `MISTRAL_KEY` | Mistral AI | ✓ dev quota | console.mistral.ai |
-| `ANTHROPIC_KEY` | Anthropic (Claude) | — paid | console.anthropic.com |
-| `OPENAI_KEY` | OpenAI | — paid | platform.openai.com |
-| `VLLM_KEY` | vLLM (local, if auth enabled) | n/a local | — |
+## Configuration Reference
 
 ### Flags
 
-| Flag | Description | Default |
+| Flag | Default | Description |
 |---|---|---|
-| `-config` | Path to YAML config file | `config.yaml` |
+| `-config` | `config.yaml` | Path to config file |
+| `-port` | `8080` | HTTP listen port |
 
-### Config File
-
-```yaml
-local:
-  nodes:
-    - id: ollama-1                       # unique identifier
-      type: ollama                       # ollama | openai-compatible
-      endpoint: http://localhost:11434
-      timeout_ms: 3000
-    - id: lmstudio-1
-      type: openai-compatible
-      endpoint: http://localhost:1234
-      timeout_ms: 3000
-    - id: vllm-1
-      type: openai-compatible
-      endpoint: http://localhost:8000
-      api_key: ${VLLM_KEY}              # optional; supports env expansion
-      timeout_ms: 3000
-
-remote:
-  providers:
-    - id: openrouter-1
-      type: openai-compatible
-      endpoint: https://openrouter.ai/api
-      api_key: ${OPENROUTER_KEY}
-    - id: groq-1
-      type: openai-compatible
-      endpoint: https://api.groq.com/openai
-      api_key: ${GROQ_KEY}
-    - id: nvidia-1
-      type: openai-compatible
-      endpoint: https://integrate.api.nvidia.com
-      api_key: ${NVIDIA_KEY}
-    - id: deepseek-1
-      type: openai-compatible
-      endpoint: https://api.deepseek.com
-      api_key: ${DEEPSEEK_KEY}
-    - id: mistral-1
-      type: openai-compatible
-      endpoint: https://api.mistral.ai
-      api_key: ${MISTRAL_KEY}
-    - id: openai-1
-      type: openai-compatible
-      endpoint: https://api.openai.com
-      api_key: ${OPENAI_KEY}
-    - id: google-1
-      type: google                       # openai-compatible | anthropic | google | cohere
-      api_key: ${GOOGLE_KEY}
-    - id: cohere-1
-      type: cohere
-      api_key: ${COHERE_KEY}
-    - id: anthropic-1
-      type: anthropic
-      api_key: ${ANTHROPIC_KEY}
-
-routing:
-  latency_threshold_ms: 2000            # latency above this marks a node DEGRADED
-  fallback_enabled: true                # set false to disable remote fallback entirely
-```
-
-Nodes and providers are tried in the order listed. First successful response wins. Hot-reload on save (~100ms, no restart).
-
-### Minimal Example
-
-Single local Ollama node, no remote fallback:
+### Config Schema (version: 2)
 
 ```yaml
-local:
-  nodes:
-    - id: ollama-local
-      type: ollama
-      endpoint: http://localhost:11434
-      timeout_ms: 5000
+version: 2
 
 routing:
-  latency_threshold_ms: 3000
-  fallback_enabled: false
+  default_model: llama3.2:latest       # used when request omits model field
+  latency_threshold_ms: 2000           # health monitor: above this → DEGRADED
+
+providers:
+  - id: my-provider                    # unique; used in logs and /health
+    type: ollama                       # ollama | openai-compatible | anthropic | google | cohere | mistral
+    endpoint: http://localhost:11434   # required for ollama, openai-compatible, mistral
+    api_key: ${MY_KEY}                 # optional; env var expanded; if set+empty → provider skipped
+    timeout_ms: 3000                   # per-request HTTP timeout (default: 30000)
+    recovery_window: 5m                # how long BLOCKED state lasts (default: 1h)
+    limits:
+      requests: 100                    # max requests per window
+      window: 1m                       # window duration (e.g. 30s, 1m, 1h)
+    models:
+      - id: llama3.2:latest            # model ID passed to this provider
+        priority: 1                    # lower = preferred; must be > 0
+        is_free: true                  # metadata only; does not affect routing
 ```
+
+**Rules:**
+- All provider IDs must be unique
+- Every model must have `priority > 0`
+- `routing.default_model` must exist in at least one non-skipped provider
+- Providers with `api_key` set to an env var that is unset or empty are skipped at startup (warn in debug, no error)
+
+### Environment Variables
+
+Expanded in `config.yaml` using `${VAR_NAME}`. Only set variables for providers you enable.
+
+| Variable | Provider | Free tier |
+|---|---|---|
+| `OPENROUTER_KEY` | OpenRouter | ✓ 500+ `:free` models |
+| `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 |
+| `NVIDIA_KEY` | NVIDIA NIM | ✓ free credits |
+| `GITHUB_TOKEN` | GitHub Models | ✓ GPT-4o, Llama |
+| `GOOGLE_KEY` | Google Gemini | ✓ Flash / Flash-lite |
+| `COHERE_KEY` | Cohere | ✓ Command R/R+ |
+| `MISTRAL_KEY` | Mistral AI | ✓ dev quota |
+| `ZHIPU_KEY` | Zhipu AI | ✓ GLM-4-Flash |
+| `ANTHROPIC_KEY` | Anthropic | — paid |
+| `OPENAI_KEY` | OpenAI | — paid |
+| `VLLM_KEY` | vLLM (local, if auth enabled) | local |
+
+---
+
+## API
+
+### `POST /v1/chat/completions`
+
+Standard OpenAI chat completions. `model` field controls routing:
+
+| Value | Behavior |
+|---|---|
+| `auto` | Try models in global priority order until one succeeds |
+| `<model-id>` | Route to lowest-priority available provider with that model |
+| _(omitted)_ | Use `routing.default_model` |
+
+### `GET /models` / `GET /v1/models`
+
+Lists models from available providers only (state = `available`). Always includes `auto` as the first entry.
+
+```json
+{
+  "object": "list",
+  "data": [
+    { "id": "auto", "object": "model", "is_auto": true },
+    {
+      "id": "llama3.2:latest",
+      "object": "model",
+      "provider_id": "ollama-local",
+      "priority": 1,
+      "is_free": true,
+      "is_default": true,
+      "state": "available"
+    }
+  ]
+}
+```
+
+### `GET /health`
+
+Per-provider state. `blocked_until` included when state is `blocked`.
+
+```json
+{
+  "providers": [
+    { "id": "ollama-local", "state": "available", "latency_ms": 34 },
+    { "id": "groq-1", "state": "blocked", "latency_ms": 0, "blocked_until": "2026-04-24T12:00:00Z" }
+  ]
+}
+```
+
+### `GET /metrics`
+
+```json
+{
+  "requests": 142,
+  "failures": 3,
+  "no_capacity": 0,
+  "streams_started": 18,
+  "streams_completed": 17,
+  "streams_disconnected": 1,
+  "stream_duration_ms": 94200,
+  "provider_block_events": 3,
+  "provider_exhausted_events": 1,
+  "providers": {
+    "ollama-local": { "checks_ok": 88, "checks_fail": 0, "latency_ms": 34 },
+    "groq-1": { "checks_ok": 12, "checks_fail": 1, "latency_ms": 210 }
+  }
+}
+```
+
+---
 
 ## Project Structure
 
 ```
-cmd/
-  localrouter/
-    main.go              # entry point; wires all components, handles shutdown
+cmd/localrouter/
+  main.go              # entry point — wires components, startup probes, shutdown
 internal/
   config/
-    config.go            # YAML parsing, env expansion, validation
-    watcher.go           # fsnotify hot-reload with debounce
-  cache/
-    cache.go             # TTL-based provider blocking, 4xx tracking
+    config.go          # v2 schema parsing, env expansion, validation
+    watcher.go         # fsnotify hot-reload, 100ms debounce
   health/
-    monitor.go           # background health checks, hysteresis state machine
+    monitor.go         # background health checks, READY/DEGRADED/UNAVAILABLE hysteresis
+  limits/
+    tracker.go         # fixed-window request counter per provider
   metrics/
-    metrics.go           # atomic counters, snapshot export
+    metrics.go         # atomic counters, snapshot export
+  registry/
+    registry.go        # sorted (provider, model) index — priority-order routing table
+  state/
+    manager.go         # AVAILABLE/UNHEALTHY/EXHAUSTED/BLOCKED state machine
   provider/
-    provider.go          # Provider interface and shared request/response types
-    factory/
-      factory.go         # provider instantiation from config
-    openaicompat/        # OpenAI-compatible HTTP adapter (used by most providers)
-    ollama/              # Ollama adapter (wraps openaicompat, custom health check)
-    anthropic/           # Anthropic Messages API adapter
-    google/              # Google Gemini API adapter
-    cohere/              # Cohere chat API adapter
+    provider.go        # Provider interface, shared types
+    factory/           # instantiates provider adapters from config
+    openaicompat/      # OpenAI-compatible HTTP adapter
+    ollama/            # Ollama adapter
+    anthropic/         # Anthropic Messages API adapter
+    google/            # Google Gemini adapter
+    cohere/            # Cohere chat adapter
   router/
-    router.go            # Tier 1 → Tier 2 routing logic, error classification
+    router.go          # model-aware routing loop — registry → state → limits → provider
   server/
-    server.go            # HTTP server setup (chi router)
-    handlers.go          # GET /health, GET /metrics
-    sse.go               # POST /v1/chat/completions, SSE streaming
-Dockerfile               # multi-stage build; final image is Alpine + binary
-config.yaml              # example configuration
+    server.go          # HTTP server (chi)
+    handlers.go        # /health, /metrics, /models
+    sse.go             # /v1/chat/completions, SSE streaming
+config.yaml            # example configuration (v2 schema)
+Dockerfile             # multi-stage build; Alpine + static binary
 ```
+
+---
 
 ## Releases
 
-Releases are published at [github.com/rodrigoazlima/localrouter/releases](https://github.com/rodrigoazlima/localrouter/releases).
+Pre-built binaries for Linux (amd64/arm64), macOS (amd64/arm64), and Windows (amd64) on the [releases page](https://github.com/rodrigoazlima/localrouter/releases). Docker image on the GitHub Container Registry (`ghcr.io/rodrigoazlima/localrouter`).
 
-Versioning follows [Semantic Versioning](https://semver.org/). Each release includes:
-
-- Pre-built binaries for Linux, macOS, and Windows
-- Docker image pushed to the GitHub Container Registry (`ghcr.io/rodrigoazlima/localrouter`)
-- Changelog describing breaking changes, new features, and fixes
+---
 
 ## Contributing
 
-1. Fork the repository and create a branch from `master`.
-2. Run existing tests before making changes: `go test ./...`
-3. Write tests for new behavior. Each package under `internal/` has a corresponding `*_test.go` file.
-4. Keep commits focused; one logical change per commit.
-5. Open a pull request against `master` with a clear description of what changes and why.
+1. Fork, branch from `master`.
+2. `go test ./...` before and after changes.
+3. Write tests for new behavior.
+4. One logical change per commit.
+5. PR against `master` with a clear description.
 
-Code conventions:
+**Code conventions:** `gofmt`, return errors don't log at call site, fail-fast config validation, no new external dependencies without discussion.
 
-- Standard Go formatting (`gofmt`). No linter exceptions without a comment explaining why.
-- Errors are returned, not logged at the call site. Logging happens at the boundary (server handlers, main).
-- Config validation fails fast at startup. Do not silently ignore invalid config fields.
-- No external dependencies beyond those already in `go.mod` without prior discussion.
+---
 
 ## License
 
-MIT License
-
-Copyright (c) 2026 rodrigoazlima
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+MIT — Copyright (c) 2026 rodrigoazlima

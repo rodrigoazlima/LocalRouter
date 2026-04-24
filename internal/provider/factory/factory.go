@@ -1,4 +1,3 @@
-// internal/provider/factory/factory.go
 package factory
 
 import (
@@ -13,21 +12,20 @@ import (
 	"github.com/rodrigoazlima/localrouter/internal/provider/openaicompat"
 )
 
-func NewFromNode(n config.NodeConfig) (provider.Provider, error) {
-	switch n.Type {
-	case "ollama":
-		return ollama.New(n.ID, n.Endpoint, n.APIKey, n.TimeoutMs), nil
-	case "openai-compatible":
-		return openaicompat.New(n.ID, n.Endpoint, n.APIKey, n.TimeoutMs), nil
-	default:
-		return nil, fmt.Errorf("unknown node type: %s", n.Type)
-	}
-}
+const defaultTimeoutMs = 30000
 
-func NewFromRemote(p config.ProviderConfig) (provider.Provider, error) {
+// New creates a provider.Provider from a ProviderConfig.
+// Returns an error if the type is unknown.
+func New(p config.ProviderConfig) (provider.Provider, error) {
+	timeoutMs := p.TimeoutMs
+	if timeoutMs <= 0 {
+		timeoutMs = defaultTimeoutMs
+	}
 	switch p.Type {
-	case "openai-compatible":
-		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, 30000), nil
+	case "ollama":
+		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs), nil
+	case "openai-compatible", "mistral":
+		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs), nil
 	case "anthropic":
 		return anthropic.New(p.ID, p.APIKey, ""), nil
 	case "google":

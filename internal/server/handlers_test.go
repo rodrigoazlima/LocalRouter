@@ -1,4 +1,3 @@
-// internal/server/handlers_test.go
 package server_test
 
 import (
@@ -7,17 +6,29 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rodrigoazlima/localrouter/internal/cache"
+	"github.com/rodrigoazlima/localrouter/internal/config"
 	"github.com/rodrigoazlima/localrouter/internal/health"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
+	"github.com/rodrigoazlima/localrouter/internal/registry"
 	"github.com/rodrigoazlima/localrouter/internal/server"
+	"github.com/rodrigoazlima/localrouter/internal/state"
 )
 
-func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
+type fakeHealthReader struct{}
+
+func (f *fakeHealthReader) IsReady(_ string) bool { return true }
+
+func buildHandlerTestServer(t *testing.T) *server.Server {
+	t.Helper()
 	m := metrics.New()
-	c := cache.New()
 	mon := health.New(m, 2000)
-	srv := server.New(nil, mon, c, m, "")
+	reg := registry.Build([]config.ProviderConfig{}, "")
+	st := state.New(&fakeHealthReader{})
+	return server.New(nil, mon, st, reg, m, "")
+}
+
+func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
+	srv := buildHandlerTestServer(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rr := httptest.NewRecorder()
@@ -30,18 +41,18 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if _, ok := body["local"]; !ok {
-		t.Fatal("missing 'local' key in health response")
-	}
-	if _, ok := body["remote"]; !ok {
-		t.Fatal("missing 'remote' key in health response")
+	if _, ok := body["providers"]; !ok {
+		t.Fatal("missing 'providers' key in health response")
 	}
 }
 
 func TestMetricsEndpoint_ReturnsJSON(t *testing.T) {
 	m := metrics.New()
-	m.LocalRequests.Add(5)
-	srv := server.New(nil, health.New(m, 2000), cache.New(), m, "")
+	m.Requests.Add(5)
+	mon := health.New(m, 2000)
+	reg := registry.Build([]config.ProviderConfig{}, "")
+	st := state.New(&fakeHealthReader{})
+	srv := server.New(nil, mon, st, reg, m, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()
@@ -54,7 +65,7 @@ func TestMetricsEndpoint_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&snap); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if snap.LocalRequests != 5 {
-		t.Fatalf("expected 5, got %d", snap.LocalRequests)
+	if snap.Requests != 5 {
+		t.Fatalf("expected 5 requests, got %d", snap.Requests)
 	}
 }

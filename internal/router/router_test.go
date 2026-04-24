@@ -1,178 +1,231 @@
-// internal/router/router_test.go
 package router_test
 
 import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
-	"github.com/rodrigoazlima/localrouter/internal/cache"
+	"github.com/rodrigoazlima/localrouter/internal/config"
+	"github.com/rodrigoazlima/localrouter/internal/limits"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
 	"github.com/rodrigoazlima/localrouter/internal/provider"
+	"github.com/rodrigoazlima/localrouter/internal/registry"
 	"github.com/rodrigoazlima/localrouter/internal/router"
+	"github.com/rodrigoazlima/localrouter/internal/state"
 )
 
-type mockProvider struct {
-	id           string
-	completeErr  error
-	completeResp *provider.Response
+type fakeProvider struct {
+	id       string
+	endpoint string
+	failWith error
 }
 
-func (m *mockProvider) ID() string       { return m.id }
-func (m *mockProvider) Type() string     { return "mock" }
-func (m *mockProvider) Endpoint() string { return "http://mock" }
-func (m *mockProvider) Complete(_ context.Context, _ *provider.Request) (*provider.Response, error) {
-	return m.completeResp, m.completeErr
-}
-func (m *mockProvider) Stream(_ context.Context, _ *provider.Request) (<-chan provider.Chunk, error) {
-	return nil, nil
-}
-func (m *mockProvider) HealthCheck(_ context.Context) error { return nil }
-
-type alwaysReadyMonitor struct{}
-
-func (a *alwaysReadyMonitor) IsReady(id string) bool { return true }
-
-type neverReadyMonitor struct{}
-
-func (n *neverReadyMonitor) IsReady(id string) bool { return false }
-
-func TestRoute_LocalSuccess_ReturnsLocalResponse(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeResp: &provider.Response{Content: "from-local"}}
-	r := router.New(
-		[]provider.Provider{local},
-		nil,
-		cache.New(),
-		&alwaysReadyMonitor{},
-		metrics.New(),
-		true,
-	)
-	resp, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func (f *fakeProvider) ID() string       { return f.id }
+func (f *fakeProvider) Type() string     { return "fake" }
+func (f *fakeProvider) Endpoint() string { return f.endpoint }
+func (f *fakeProvider) HealthCheck(_ context.Context) error { return nil }
+func (f *fakeProvider) Complete(_ context.Context, req *provider.Request) (*provider.Response, error) {
+	if f.failWith != nil {
+		return nil, f.failWith
 	}
-	if resp.Content != "from-local" {
-		t.Fatalf("expected from-local, got %s", resp.Content)
+	return &provider.Response{ID: "r1", Model: req.Model, Content: "ok"}, nil
+}
+func (f *fakeProvider) Stream(_ context.Context, req *provider.Request) (<-chan provider.Chunk, error) {
+	if f.failWith != nil {
+		return nil, f.failWith
 	}
+	ch := make(chan provider.Chunk, 1)
+	ch <- provider.Chunk{Delta: "ok", Done: true}
+	close(ch)
+	return ch, nil
 }
 
-func TestRoute_LocalFail_FallsBackToRemote(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeErr: errors.New("timeout")}
-	remote := &mockProvider{id: "remote-1", completeResp: &provider.Response{Content: "from-remote"}}
-	r := router.New(
-		[]provider.Provider{local},
-		[]provider.Provider{remote},
-		cache.New(),
-		&alwaysReadyMonitor{},
-		metrics.New(),
-		true,
-	)
-	resp, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Content != "from-remote" {
-		t.Fatalf("expected from-remote, got %s", resp.Content)
-	}
+type fakeHealth struct {
+	ready map[string]bool
 }
 
-func TestRoute_LocalNotReady_SkipsToRemote(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeResp: &provider.Response{Content: "from-local"}}
-	remote := &mockProvider{id: "remote-1", completeResp: &provider.Response{Content: "from-remote"}}
-	r := router.New(
-		[]provider.Provider{local},
-		[]provider.Provider{remote},
-		cache.New(),
-		&neverReadyMonitor{},
-		metrics.New(),
-		true,
-	)
-	resp, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func (f *fakeHealth) IsReady(id string) bool {
+	if f.ready == nil {
+		return true
 	}
-	if resp.Content != "from-remote" {
-		t.Fatalf("expected from-remote, got %s", resp.Content)
-	}
+	return f.ready[id]
 }
 
-func TestRoute_BlockedRemote_Skipped(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeErr: errors.New("down")}
-	blocked := &mockProvider{id: "remote-blocked"}
-	good := &mockProvider{id: "remote-good", completeResp: &provider.Response{Content: "ok"}}
-
-	c := cache.New()
-	c.Block("remote-blocked", cache.TierA)
-
-	r := router.New(
-		[]provider.Provider{local},
-		[]provider.Provider{blocked, good},
-		c,
-		&alwaysReadyMonitor{},
-		metrics.New(),
-		true,
-	)
-	resp, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if resp.Content != "ok" {
-		t.Fatalf("expected ok, got %s", resp.Content)
-	}
-}
-
-func TestRoute_AllFail_ReturnsNoCapacityError(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeErr: errors.New("down")}
-	remote := &mockProvider{id: "remote-1", completeErr: &provider.HTTPError{StatusCode: 503}}
+func buildRouter(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider) *router.Router {
+	reg := registry.Build(providers, defaultModel)
+	h := &fakeHealth{}
+	st := state.New(h)
+	lim := limits.New(nil)
 	m := metrics.New()
-	r := router.New(
-		[]provider.Provider{local},
-		[]provider.Provider{remote},
-		cache.New(),
-		&alwaysReadyMonitor{},
-		m,
-		true,
-	)
-	_, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if err == nil {
-		t.Fatal("expected error when all providers fail")
+	cfg := router.Config{
+		DefaultModel:    defaultModel,
+		RecoveryWindows: map[string]time.Duration{},
 	}
-	if m.Snapshot().NoCapacity != 1 {
-		t.Fatalf("expected NoCapacity=1, got %d", m.Snapshot().NoCapacity)
+	return router.New(ps, reg, st, lim, m, cfg)
+}
+
+func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider, h state.HealthReader) *router.Router {
+	reg := registry.Build(providers, defaultModel)
+	st := state.New(h)
+	lim := limits.New(nil)
+	m := metrics.New()
+	cfg := router.Config{
+		DefaultModel:    defaultModel,
+		RecoveryWindows: map[string]time.Duration{},
+	}
+	return router.New(ps, reg, st, lim, m, cfg)
+}
+
+func TestRoute_ExplicitModel(t *testing.T) {
+	fp := &fakeProvider{id: "p1", endpoint: "http://localhost"}
+	providers := []config.ProviderConfig{{
+		ID: "p1", Type: "ollama",
+		Models: []config.ModelConfig{{ID: "llama3:latest", Priority: 1}},
+	}}
+	r := buildRouter(providers, "llama3:latest", map[string]provider.Provider{"p1": fp})
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: "llama3:latest", Messages: []provider.Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "llama3:latest" {
+		t.Errorf("want model llama3:latest, got %s", resp.Model)
 	}
 }
 
-func TestRoute_FallbackDisabled_NoRemoteAttempt(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeErr: errors.New("down")}
-	remote := &mockProvider{id: "remote-1", completeResp: &provider.Response{Content: "from-remote"}}
-	m := metrics.New()
-	r := router.New(
-		[]provider.Provider{local},
-		[]provider.Provider{remote},
-		cache.New(),
-		&alwaysReadyMonitor{},
-		m,
-		false,
-	)
-	_, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
+func TestRoute_AutoModel(t *testing.T) {
+	fp1 := &fakeProvider{id: "p1"}
+	fp2 := &fakeProvider{id: "p2"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+		{ID: "p2", Type: "ollama", Models: []config.ModelConfig{{ID: "m2", Priority: 2}}},
+	}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp1, "p2": fp2})
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: "auto"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "m1" {
+		t.Errorf("auto should pick highest priority model m1, got %s", resp.Model)
+	}
+}
+
+func TestRoute_EmptyModel_UsesDefault(t *testing.T) {
+	fp := &fakeProvider{id: "p1"}
+	providers := []config.ProviderConfig{{
+		ID: "p1", Type: "ollama",
+		Models: []config.ModelConfig{{ID: "default-model", Priority: 1}},
+	}}
+	r := buildRouter(providers, "default-model", map[string]provider.Provider{"p1": fp})
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: ""})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "default-model" {
+		t.Errorf("empty model should use default, got %s", resp.Model)
+	}
+}
+
+func TestRoute_UnknownModel(t *testing.T) {
+	fp := &fakeProvider{id: "p1"}
+	providers := []config.ProviderConfig{{
+		ID: "p1", Type: "ollama",
+		Models: []config.ModelConfig{{ID: "m1", Priority: 1}},
+	}}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp})
+
+	_, err := r.Route(context.Background(), &provider.Request{Model: "unknown-model"})
+	if !errors.Is(err, router.ErrModelNotFound) {
+		t.Errorf("want ErrModelNotFound, got %v", err)
+	}
+}
+
+func TestRoute_ProviderFailover(t *testing.T) {
+	fp1 := &fakeProvider{id: "p1", failWith: &provider.HTTPError{StatusCode: 500, Body: "error"}}
+	fp2 := &fakeProvider{id: "p2"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+		{ID: "p2", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 2}}},
+	}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp1, "p2": fp2})
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
+	if err != nil {
+		t.Fatalf("want failover to p2, got error: %v", err)
+	}
+	_ = resp
+}
+
+func TestRoute_AllProvidersFail(t *testing.T) {
+	httpErr := &provider.HTTPError{StatusCode: 500, Body: "err"}
+	fp := &fakeProvider{id: "p1", failWith: httpErr}
+	providers := []config.ProviderConfig{{
+		ID: "p1", Type: "ollama",
+		Models: []config.ModelConfig{{ID: "m1", Priority: 1}},
+	}}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp})
+
+	_, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
 	if !errors.Is(err, router.ErrAllProvidersFailed) {
-		t.Fatalf("expected ErrAllProvidersFailed, got %v", err)
-	}
-	if m.Snapshot().RemoteRequests != 0 {
-		t.Fatal("remote must not be attempted when fallback disabled")
+		t.Errorf("want ErrAllProvidersFailed, got %v", err)
 	}
 }
 
-func TestRoute_429_BlocksProviderTierA(t *testing.T) {
-	local := &mockProvider{id: "local-1", completeErr: errors.New("down")}
-	remote := &mockProvider{id: "remote-1", completeErr: &provider.HTTPError{StatusCode: 429}}
-	c := cache.New()
-	r := router.New(
-		[]provider.Provider{local}, []provider.Provider{remote}, c,
-		&alwaysReadyMonitor{}, metrics.New(), true,
-	)
-	r.Route(context.Background(), &provider.Request{Model: "auto"})
-	if !c.IsBlocked("remote-1") {
-		t.Fatal("remote-1 must be blocked after 429")
+func TestRoute_UnhealthyProviderSkipped(t *testing.T) {
+	fp1 := &fakeProvider{id: "p1"}
+	fp2 := &fakeProvider{id: "p2"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+		{ID: "p2", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 2}}},
+	}
+	h := &fakeHealth{ready: map[string]bool{"p1": false, "p2": true}}
+	r := buildRouterWithHealth(providers, "m1", map[string]provider.Provider{"p1": fp1, "p2": fp2}, h)
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
+	if err != nil {
+		t.Fatalf("want p2 to serve (p1 unhealthy), got error: %v", err)
+	}
+	if resp.Model != "m1" {
+		t.Errorf("want m1, got %s", resp.Model)
+	}
+}
+
+func TestStream_SelectsProvider(t *testing.T) {
+	fp := &fakeProvider{id: "p1"}
+	providers := []config.ProviderConfig{{
+		ID: "p1", Type: "ollama",
+		Models: []config.ModelConfig{{ID: "m1", Priority: 1}},
+	}}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp})
+
+	ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	chunk := <-ch
+	if chunk.Delta != "ok" {
+		t.Errorf("want chunk delta 'ok', got %q", chunk.Delta)
+	}
+}
+
+func TestStream_Failover(t *testing.T) {
+	fp1 := &fakeProvider{id: "p1", failWith: &provider.HTTPError{StatusCode: 500, Body: "error"}}
+	fp2 := &fakeProvider{id: "p2"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+		{ID: "p2", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 2}}},
+	}
+	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp1, "p2": fp2})
+
+	ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
+	if err != nil {
+		t.Fatalf("want failover to p2, got error: %v", err)
+	}
+	chunk := <-ch
+	if chunk.Delta != "ok" {
+		t.Errorf("want chunk delta 'ok', got %q", chunk.Delta)
 	}
 }

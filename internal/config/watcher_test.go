@@ -11,13 +11,16 @@ import (
 
 func TestWatcher_CallsOnChangeAfterFileWrite(t *testing.T) {
 	path := writeConfig(t, `
-local:
-  nodes:
-    - id: node-1
-      type: ollama
-      endpoint: http://localhost:11434
-remote:
-  providers: []
+version: 2
+routing:
+  default_model: llama3
+providers:
+  - id: node-1
+    type: ollama
+    endpoint: http://localhost:11434
+    models:
+      - id: llama3
+        priority: 1
 `)
 	initial, err := config.Load(path)
 	if err != nil {
@@ -36,16 +39,22 @@ remote:
 	time.Sleep(100 * time.Millisecond)
 
 	os.WriteFile(path, []byte(`
-local:
-  nodes:
-    - id: node-1
-      type: ollama
-      endpoint: http://localhost:11434
-    - id: node-2
-      type: openai-compatible
-      endpoint: http://localhost:1234
-remote:
-  providers: []
+version: 2
+routing:
+  default_model: llama3
+providers:
+  - id: node-1
+    type: ollama
+    endpoint: http://localhost:11434
+    models:
+      - id: llama3
+        priority: 1
+  - id: node-2
+    type: ollama
+    endpoint: http://localhost:11435
+    models:
+      - id: llama3
+        priority: 2
 `), 0644)
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -60,13 +69,16 @@ remote:
 
 func TestWatcher_InvalidConfig_DoesNotCallOnChange(t *testing.T) {
 	path := writeConfig(t, `
-local:
-  nodes:
-    - id: node-1
-      type: ollama
-      endpoint: http://localhost:11434
-remote:
-  providers: []
+version: 2
+routing:
+  default_model: llama3
+providers:
+  - id: node-1
+    type: ollama
+    endpoint: http://localhost:11434
+    models:
+      - id: llama3
+        priority: 1
 `)
 	initial, _ := config.Load(path)
 	var callCount atomic.Int32

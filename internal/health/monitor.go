@@ -60,8 +60,12 @@ func New(m *metrics.Collector, latencyThresholdMs int64) *Monitor {
 }
 
 func (mon *Monitor) AddNode(id string, hc HealthChecker, timeoutMs, intervalMs int) {
-	ctx, cancel := context.WithCancel(context.Background())
 	mon.mu.Lock()
+	if _, exists := mon.workers[id]; exists {
+		mon.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	mon.states[id] = NodeStatus{State: StateUnavailable}
 	mon.workers[id] = &nodeWorker{cancel: cancel}
 	mon.mu.Unlock()
@@ -147,7 +151,7 @@ func (mon *Monitor) runNode(ctx context.Context, id string, hc HealthChecker, ti
 			}
 			mon.states[id] = s
 			mon.mu.Unlock()
-			mon.metrics.NodeFail(id)
+			mon.metrics.ProviderFail(id)
 			backoff = min(backoff*2, 5*time.Minute)
 		} else {
 			s.successRun++
@@ -167,7 +171,7 @@ func (mon *Monitor) runNode(ctx context.Context, id string, hc HealthChecker, ti
 			}
 			mon.states[id] = s
 			mon.mu.Unlock()
-			mon.metrics.NodeOK(id, latency)
+			mon.metrics.ProviderOK(id, latency)
 			backoff = base
 		}
 	}

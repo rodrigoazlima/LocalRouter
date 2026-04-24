@@ -1,4 +1,3 @@
-// internal/server/sse_test.go
 package server_test
 
 import (
@@ -10,13 +9,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/rodrigoazlima/localrouter/internal/cache"
+	"github.com/rodrigoazlima/localrouter/internal/config"
 	"github.com/rodrigoazlima/localrouter/internal/health"
+	"github.com/rodrigoazlima/localrouter/internal/limits"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
 	"github.com/rodrigoazlima/localrouter/internal/provider"
+	"github.com/rodrigoazlima/localrouter/internal/registry"
 	"github.com/rodrigoazlima/localrouter/internal/router"
 	"github.com/rodrigoazlima/localrouter/internal/server"
+	"github.com/rodrigoazlima/localrouter/internal/state"
 )
 
 type succeedingProvider struct{}
@@ -24,8 +27,8 @@ type succeedingProvider struct{}
 func (s *succeedingProvider) ID() string       { return "ok" }
 func (s *succeedingProvider) Type() string     { return "mock" }
 func (s *succeedingProvider) Endpoint() string { return "http://mock" }
-func (s *succeedingProvider) Complete(_ context.Context, _ *provider.Request) (*provider.Response, error) {
-	return &provider.Response{Content: "Hello!"}, nil
+func (s *succeedingProvider) Complete(_ context.Context, req *provider.Request) (*provider.Response, error) {
+	return &provider.Response{Content: "Hello!", Model: req.Model}, nil
 }
 func (s *succeedingProvider) Stream(_ context.Context, _ *provider.Request) (<-chan provider.Chunk, error) {
 	ch := make(chan provider.Chunk, 3)
@@ -36,16 +39,23 @@ func (s *succeedingProvider) Stream(_ context.Context, _ *provider.Request) (<-c
 }
 func (s *succeedingProvider) HealthCheck(_ context.Context) error { return nil }
 
-type alwaysReady struct{}
-
-func (a *alwaysReady) IsReady(_ string) bool { return true }
-
 func buildTestServer(p provider.Provider) *server.Server {
 	m := metrics.New()
-	c := cache.New()
 	mon := health.New(m, 2000)
-	r := router.New([]provider.Provider{p}, nil, c, &alwaysReady{}, m, true)
-	return server.New(r, mon, c, m, "")
+	providerCfgs := []config.ProviderConfig{{
+		ID:   p.ID(),
+		Type: "openai-compatible",
+		Models: []config.ModelConfig{{ID: "test-model", Priority: 1}},
+	}}
+	reg := registry.Build(providerCfgs, "test-model")
+	st := state.New(&fakeHealthReader{})
+	lim := limits.New(nil)
+	rCfg := router.Config{
+		DefaultModel:    "test-model",
+		RecoveryWindows: map[string]time.Duration{},
+	}
+	r := router.New(map[string]provider.Provider{p.ID(): p}, reg, st, lim, m, rCfg)
+	return server.New(r, mon, st, reg, m, "")
 }
 
 func TestCompletions_NonStream_ReturnsJSON(t *testing.T) {
