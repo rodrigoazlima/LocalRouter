@@ -8,12 +8,16 @@ import (
 
 // Entry represents a single (provider, model) pair in the registry.
 type Entry struct {
-	ProviderID string
-	ModelID    string
-	Priority   int
-	IsFree     bool
-	IsDefault  bool
-	IsRemote   bool
+	ProviderID  string
+	ModelID     string
+	Priority    int
+	IsFree      bool
+	IsDefault   bool
+	IsRemote    bool
+	Temperature *float64
+	TopP        *float64
+	MaxTokens   *int
+	Seed        *int
 }
 
 // anyModelEntry tracks a provider that accepts any model (configured without an explicit model list).
@@ -79,12 +83,16 @@ func Build(providers []config.ProviderConfig, defaultModel string) *Registry {
 		} else {
 			for _, m := range p.Models {
 				e := Entry{
-					ProviderID: p.ID,
-					ModelID:    m.ID,
-					Priority:   m.Priority,
-					IsFree:     m.IsFree,
-					IsDefault:  m.ID == defaultModel,
-					IsRemote:   p.IsRemote,
+					ProviderID:  p.ID,
+					ModelID:     m.ID,
+					Priority:    m.Priority,
+					IsFree:      m.IsFree,
+					IsDefault:   m.ID == defaultModel,
+					IsRemote:    p.IsRemote,
+					Temperature: m.Temperature,
+					TopP:        m.TopP,
+					MaxTokens:   m.MaxTokens,
+					Seed:        m.Seed,
 				}
 				all = append(all, e)
 			}

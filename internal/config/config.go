@@ -105,9 +105,13 @@ func (l *LimitsConfig) WindowDur() time.Duration {
 
 // ModelConfig describes a model offered by a provider.
 type ModelConfig struct {
-	ID       string `yaml:"id"`
-	Priority int    `yaml:"priority"`
-	IsFree   bool   `yaml:"is_free"`
+	ID          string   `yaml:"id"`
+	Priority    int      `yaml:"priority"`
+	IsFree      bool     `yaml:"is_free"`
+	Temperature *float64 `yaml:"temperature,omitempty"`
+	TopP        *float64 `yaml:"top_p,omitempty"`
+	MaxTokens   *int     `yaml:"max_tokens,omitempty"`
+	Seed        *int     `yaml:"seed,omitempty"`
 }
 
 var validProviderTypes = map[string]bool{

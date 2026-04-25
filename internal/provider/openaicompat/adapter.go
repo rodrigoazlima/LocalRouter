@@ -38,9 +38,13 @@ func (a *Adapter) Endpoint() string      { return a.endpoint }
 func (a *Adapter) Client() *http.Client  { return a.client }
 
 type oaiRequest struct {
-	Model    string       `json:"model"`
-	Messages []oaiMessage `json:"messages"`
-	Stream   bool         `json:"stream,omitempty"`
+	Model       string       `json:"model"`
+	Messages    []oaiMessage `json:"messages"`
+	Stream      bool         `json:"stream,omitempty"`
+	Temperature *float64     `json:"temperature,omitempty"`
+	TopP        *float64     `json:"top_p,omitempty"`
+	MaxTokens   *int         `json:"max_tokens,omitempty"`
+	Seed        *int         `json:"seed,omitempty"`
 }
 type oaiMessage struct {
 	Role    string `json:"role"`
@@ -64,7 +68,14 @@ type streamChunk struct {
 }
 
 func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provider.Response, error) {
-	body, _ := json.Marshal(oaiRequest{Model: req.Model, Messages: toOAI(req.Messages)})
+	body, _ := json.Marshal(oaiRequest{
+		Model:       req.Model,
+		Messages:    toOAI(req.Messages),
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+		Seed:        req.Seed,
+	})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		a.endpoint+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
@@ -97,7 +108,15 @@ func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provide
 }
 
 func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan provider.Chunk, error) {
-	body, _ := json.Marshal(oaiRequest{Model: req.Model, Messages: toOAI(req.Messages), Stream: true})
+	body, _ := json.Marshal(oaiRequest{
+		Model:       req.Model,
+		Messages:    toOAI(req.Messages),
+		Stream:      true,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+		Seed:        req.Seed,
+	})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		a.endpoint+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {

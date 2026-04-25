@@ -137,6 +137,7 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 
 		reqCopy := *req
 		reqCopy.Model = entry.ModelID
+		applyModelParams(&reqCopy, entry)
 
 		resp, err := p.Complete(ctx, &reqCopy)
 		if err != nil {
@@ -187,6 +188,7 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 
 		reqCopy := *req
 		reqCopy.Model = entry.ModelID
+		applyModelParams(&reqCopy, entry)
 
 		ch, err := p.Stream(ctx, &reqCopy)
 		if err != nil {
@@ -218,6 +220,23 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 
 	r.metrics.NoCapacity.Add(1)
 	return nil, ErrAllProvidersFailed
+}
+
+// applyModelParams overlays model-level inference params from the registry entry onto the request.
+// Config-level params take precedence over any request-level values.
+func applyModelParams(req *provider.Request, e registry.Entry) {
+	if e.Temperature != nil {
+		req.Temperature = e.Temperature
+	}
+	if e.TopP != nil {
+		req.TopP = e.TopP
+	}
+	if e.MaxTokens != nil {
+		req.MaxTokens = e.MaxTokens
+	}
+	if e.Seed != nil {
+		req.Seed = e.Seed
+	}
 }
 
 func filterProvider(entries []registry.Entry, providerID string) []registry.Entry {
