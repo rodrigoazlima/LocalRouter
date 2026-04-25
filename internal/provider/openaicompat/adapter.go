@@ -82,7 +82,9 @@ func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provide
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if a.apiKey != "" {
+	if key := req.APIKey; key != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+key)
+	} else if a.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
 	}
 	resp, err := a.client.Do(httpReq)
@@ -124,7 +126,9 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	if a.apiKey != "" {
+	if key := req.APIKey; key != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+key)
+	} else if a.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
 	}
 	// Use a.client (has timeout) for streaming too

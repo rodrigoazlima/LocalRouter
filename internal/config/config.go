@@ -108,6 +108,7 @@ type ModelConfig struct {
 	ID          string   `yaml:"id"`
 	Priority    int      `yaml:"priority"`
 	IsFree      bool     `yaml:"is_free"`
+	APIKey      string   `yaml:"api_key,omitempty"`
 	Temperature *float64 `yaml:"temperature,omitempty"`
 	TopP        *float64 `yaml:"top_p,omitempty"`
 	MaxTokens   *int     `yaml:"max_tokens,omitempty"`

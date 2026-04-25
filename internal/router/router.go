@@ -222,9 +222,12 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 	return nil, ErrAllProvidersFailed
 }
 
-// applyModelParams overlays model-level inference params from the registry entry onto the request.
+// applyModelParams overlays model-level params from the registry entry onto the request.
 // Config-level params take precedence over any request-level values.
 func applyModelParams(req *provider.Request, e registry.Entry) {
+	if e.APIKey != "" {
+		req.APIKey = e.APIKey
+	}
 	if e.Temperature != nil {
 		req.Temperature = e.Temperature
 	}

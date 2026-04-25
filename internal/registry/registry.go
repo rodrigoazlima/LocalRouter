@@ -14,6 +14,7 @@ type Entry struct {
 	IsFree      bool
 	IsDefault   bool
 	IsRemote    bool
+	APIKey      string
 	Temperature *float64
 	TopP        *float64
 	MaxTokens   *int
@@ -89,6 +90,7 @@ func Build(providers []config.ProviderConfig, defaultModel string) *Registry {
 					IsFree:      m.IsFree,
 					IsDefault:   m.ID == defaultModel,
 					IsRemote:    p.IsRemote,
+					APIKey:      m.APIKey,
 					Temperature: m.Temperature,
 					TopP:        m.TopP,
 					MaxTokens:   m.MaxTokens,

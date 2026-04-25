@@ -20,6 +20,7 @@ type Request struct {
 	Model       string         `json:"model"`
 	Messages    []Message      `json:"messages"`
 	Stream      bool           `json:"stream,omitempty"`
+	APIKey      string         `json:"-"`
 	Temperature *float64       `json:"temperature,omitempty"`
 	TopP        *float64       `json:"top_p,omitempty"`
 	MaxTokens   *int           `json:"max_tokens,omitempty"`

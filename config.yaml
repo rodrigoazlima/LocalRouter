@@ -86,29 +86,13 @@ providers:
   - id: nvidia-1
     type: openai-compatible
     endpoint: https://integrate.api.nvidia.com/v1
-    api_key: ${NVIDIA_KEY}
-    limits:
-      requests: 40
-      window: 1m
-    recovery_window: 10m
-    models:
-      - id: qwen/qwen3-coder-480b-a35b-instruct
-        priority: 23
-        is_free: true
-        temperature: 0.7
-        top_p: 0.8
-        max_tokens: 4096
-
-  - id: nvidia-2
-    type: openai-compatible
-    endpoint: https://integrate.api.nvidia.com/v1
-    api_key: ${NVIDIA_KEY_2}
     limits:
       requests: 40
       window: 1m
     recovery_window: 10m
     models:
       - id: mistralai/devstral-2-123b-instruct-2512
+        api_key: ${NVIDIA_KEY}
         priority: 25
         is_free: true
         temperature: 0.15
