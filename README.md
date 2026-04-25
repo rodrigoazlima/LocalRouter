@@ -74,7 +74,6 @@ providers:
     models:
       - id: llama3.2:latest
         priority: 1
-        is_free: true
 
   - id: groq-1
     type: openai-compatible
@@ -84,10 +83,9 @@ providers:
       requests: 100
       window: 1m
     recovery_window: 10m
-    models:
-      - id: llama-3.1-8b-instant
-        priority: 10
-        is_free: true
+     models:
+       - id: llama-3.1-8b-instant
+         priority: 10
 ```
 
 ### 3. Run
@@ -221,7 +219,6 @@ Lists models from available providers only (state = `available`). Always include
       "object": "model",
       "provider_id": "ollama-local",
       "priority": 1,
-      "is_free": true,
       "is_default": true,
       "state": "available"
     }
