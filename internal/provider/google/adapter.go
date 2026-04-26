@@ -65,7 +65,7 @@ type geminiResp struct {
 }
 
 func (a *Adapter) url(model, action string) string {
-	return fmt.Sprintf("%s/v1beta/models/%s:%s?key=%s", a.endpoint, model, action, a.apiKey)
+	return fmt.Sprintf("%s/v1beta/models/%s:%s", a.endpoint, model, action)
 }
 
 func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provider.Response, error) {
@@ -75,6 +75,7 @@ func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provide
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-goog-api-key", a.apiKey)
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -106,6 +107,7 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-goog-api-key", a.apiKey)
 	resp, err := a.streamClient.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -162,10 +164,11 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 
 func (a *Adapter) HealthCheck(ctx context.Context) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		fmt.Sprintf("%s/v1beta/models?key=%s", a.endpoint, a.apiKey), nil)
+		fmt.Sprintf("%s/v1beta/models", a.endpoint), nil)
 	if err != nil {
 		return err
 	}
+	req.Header.Set("X-goog-api-key", a.apiKey)
 	resp, err := a.client.Do(req)
 	if err != nil {
 		return err

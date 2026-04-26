@@ -17,8 +17,8 @@ import (
 
 func TestComplete_Success(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.URL.RawQuery, "key=test-key") {
-			t.Errorf("missing key query param: %s", r.URL.RawQuery)
+		if r.Header.Get("X-goog-api-key") != "test-key" {
+			t.Errorf("missing X-goog-api-key header, got: %q", r.Header.Get("X-goog-api-key"))
 		}
 		if !strings.Contains(r.URL.Path, ":generateContent") {
 			t.Errorf("unexpected path: %s", r.URL.Path)

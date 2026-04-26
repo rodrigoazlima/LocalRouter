@@ -124,13 +124,11 @@ providers:
     type: google
     api_key: ${GOOGLE_KEY}
     limits:
-      requests: 10
-      window: 1m
+      requests: 1500
+      window: 24h
     recovery_window: 15m
     models:
-      - id: gemini-2.0-flash
-        is_free: true
-      - id: gemini-1.5-flash
+      - id: gemini-flash-latest
         is_free: true
 
   - id: cohere-1
