@@ -171,7 +171,6 @@ func buildProviders(cfg *config.Config, mon *health.Monitor) (
 
 // runStartupProbes probes all providers concurrently.
 // On success: marks the provider ready in the health monitor.
-// On failure for remote providers: applies a TierA block (1 h) via the state manager.
 func runStartupProbes(
 	ctx context.Context,
 	providers map[string]provider.Provider,
@@ -190,10 +189,6 @@ func runStartupProbes(
 			start := time.Now()
 			if err := p.HealthCheck(pCtx); err != nil {
 				log.Printf("[INIT] %s: probe failed: %v", id, err)
-				if remoteIDs[id] {
-					// Block remote providers for TierA duration on startup probe failure.
-					st.Block(id, time.Hour)
-				}
 				return
 			}
 			mon.SetReady(id)

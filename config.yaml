@@ -101,18 +101,21 @@ providers:
 
   - id: github-models-1
     type: openai-compatible
-    endpoint: https://models.inference.ai.azure.com
+    endpoint: https://models.github.ai/inference
     api_key: ${GITHUB_TOKEN}
     limits:
       requests: 50
       window: 1m
     recovery_window: 15m
     models:
-      - id: gpt-4o
+      - id: openai/gpt-5
         priority: 24
         is_free: true
-      - id: meta-llama-3-70b-instruct
+      - id: gpt-4o
         priority: 25
+        is_free: true
+      - id: meta-llama/llama-4-maverick
+        priority: 26
         is_free: true
 
   # --- Remote: rate-limited direct APIs (priority 30-39) ---

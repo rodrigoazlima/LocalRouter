@@ -16,11 +16,9 @@ type Collector struct {
 	ProviderBlockEvents     atomic.Int64
 	ProviderExhaustedEvents atomic.Int64
 
-	// Tier-aware counters (new schema).
+	// Request source tracking (new schema).
 	LocalRequests  atomic.Int64
 	RemoteRequests atomic.Int64
-	Tier1Failures  atomic.Int64 // local provider failures
-	Tier2Failures  atomic.Int64 // remote provider failures
 
 	mu                 sync.RWMutex
 	providerChecksOK   map[string]*atomic.Int64
@@ -29,20 +27,18 @@ type Collector struct {
 }
 
 type Snapshot struct {
-	Requests                int64                       `json:"requests"`
-	Failures                int64                       `json:"failures"`
-	NoCapacity              int64                       `json:"no_capacity"`
-	StreamsStarted          int64                       `json:"streams_started"`
-	StreamsCompleted        int64                       `json:"streams_completed"`
-	StreamsDisconnected     int64                       `json:"streams_disconnected"`
-	StreamDurationMs        int64                       `json:"stream_duration_ms"`
-	ProviderBlockEvents     int64                       `json:"provider_block_events"`
-	ProviderExhaustedEvents int64                       `json:"provider_exhausted_events"`
+	Requests                int64 `json:"requests"`
+	Failures                int64 `json:"failures"`
+	NoCapacity              int64 `json:"no_capacity"`
+	StreamsStarted          int64 `json:"streams_started"`
+	StreamsCompleted        int64 `json:"streams_completed"`
+	StreamsDisconnected     int64 `json:"streams_disconnected"`
+	StreamDurationMs        int64 `json:"stream_duration_ms"`
+	ProviderBlockEvents     int64 `json:"provider_block_events"`
+	ProviderExhaustedEvents int64 `json:"provider_exhausted_events"`
 
 	LocalRequests  int64 `json:"local_requests"`
 	RemoteRequests int64 `json:"remote_requests"`
-	Tier1Failures  int64 `json:"tier1_failures"`
-	Tier2Failures  int64 `json:"tier2_failures"`
 
 	// Providers maps provider ID to per-provider health metrics.
 	// JSON key is "nodes" to match the new API contract.
@@ -112,8 +108,6 @@ func (c *Collector) Snapshot() Snapshot {
 		ProviderExhaustedEvents: c.ProviderExhaustedEvents.Load(),
 		LocalRequests:           c.LocalRequests.Load(),
 		RemoteRequests:          c.RemoteRequests.Load(),
-		Tier1Failures:           c.Tier1Failures.Load(),
-		Tier2Failures:           c.Tier2Failures.Load(),
 		Providers:               providers,
 	}
 }

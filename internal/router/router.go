@@ -146,11 +146,6 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
 			if entry.IsRemote {
-				r.metrics.Tier2Failures.Add(1)
-			} else {
-				r.metrics.Tier1Failures.Add(1)
-			}
-			if entry.IsRemote {
 				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
 				blockDur := classifyError(err, recoveryWindow)
 				r.state.Block(p.ID(), blockDur)
@@ -198,11 +193,6 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
-			if entry.IsRemote {
-				r.metrics.Tier2Failures.Add(1)
-			} else {
-				r.metrics.Tier1Failures.Add(1)
-			}
 			if entry.IsRemote {
 				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
 				blockDur := classifyError(err, recoveryWindow)
