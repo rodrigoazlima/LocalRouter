@@ -201,7 +201,7 @@ func TestStream_SelectsProvider(t *testing.T) {
 	}}
 	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp})
 
-	ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
+	_, ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestStream_Failover(t *testing.T) {
 	}
 	r := buildRouter(providers, "m1", map[string]provider.Provider{"p1": fp1, "p2": fp2})
 
-	ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
+	_, ch, err := r.Stream(context.Background(), &provider.Request{Model: "m1"})
 	if err != nil {
 		t.Fatalf("want failover to p2, got error: %v", err)
 	}

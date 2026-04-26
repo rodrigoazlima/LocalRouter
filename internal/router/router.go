@@ -182,19 +182,20 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 	return nil, ErrAllProvidersFailed
 }
 
-func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan provider.Chunk, error) {
+// Stream routes a streaming request and returns the resolved model name alongside the chunk channel.
+func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-chan provider.Chunk, error) {
 	rid := reqid.From(ctx)
 	entries := r.resolve(req.Model)
 	if len(entries) == 0 {
 		r.metrics.NoCapacity.Add(1)
-		return nil, ErrModelNotFound
+		return "", nil, ErrModelNotFound
 	}
 
 	for len(entries) > 0 {
 		p, entry, err := r.selectProvider(entries)
 		if err != nil {
 			r.metrics.NoCapacity.Add(1)
-			return nil, ErrAllProvidersFailed
+			return "", nil, ErrAllProvidersFailed
 		}
 
 		reqCopy := *req
@@ -226,11 +227,11 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (<-chan prov
 			r.metrics.LocalRequests.Add(1)
 		}
 		log.Printf("[%s] → %s model=%q stream=true", rid, p.ID(), reqCopy.Model)
-		return ch, nil
+		return reqCopy.Model, ch, nil
 	}
 
 	r.metrics.NoCapacity.Add(1)
-	return nil, ErrAllProvidersFailed
+	return "", nil, ErrAllProvidersFailed
 }
 
 // applyModelParams overlays model-level params from the registry entry onto the request.

@@ -6,41 +6,81 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rodrigoazlima/localrouter/internal/provider"
 	"github.com/rodrigoazlima/localrouter/internal/reqid"
 )
 
+// incomingMessage handles both string and array content from clients like Cline.
+type incomingMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+func (m incomingMessage) toProviderMessage() provider.Message {
+	// Try plain string first.
+	var s string
+	if err := json.Unmarshal(m.Content, &s); err == nil {
+		return provider.Message{Role: m.Role, Content: s}
+	}
+	// Array of content blocks — extract text parts.
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(m.Content, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				parts = append(parts, b.Text)
+			}
+		}
+		return provider.Message{Role: m.Role, Content: strings.Join(parts, "\n")}
+	}
+	return provider.Message{Role: m.Role, Content: string(m.Content)}
+}
+
 type completionRequest struct {
-	Model    string             `json:"model"`
-	Messages []provider.Message `json:"messages"`
-	Stream   bool               `json:"stream"`
+	Model       string            `json:"model"`
+	Messages    []incomingMessage `json:"messages"`
+	Stream      bool              `json:"stream"`
+	Temperature *float64          `json:"temperature,omitempty"`
+	TopP        *float64          `json:"top_p,omitempty"`
+	MaxTokens   *int              `json:"max_tokens,omitempty"`
+	Seed        *int              `json:"seed,omitempty"`
 }
 
 type completionResponse struct {
 	ID      string         `json:"id"`
 	Object  string         `json:"object"`
+	Created int64          `json:"created"`
 	Model   string         `json:"model"`
 	Choices []choice       `json:"choices"`
 	Usage   provider.Usage `json:"usage"`
 }
 
 type choice struct {
-	Index   int              `json:"index"`
-	Message provider.Message `json:"message"`
+	Index        int              `json:"index"`
+	Message      provider.Message `json:"message"`
+	FinishReason string           `json:"finish_reason"`
 }
 
 type streamChoice struct {
 	Index int `json:"index"`
 	Delta struct {
+		Role    string `json:"role,omitempty"`
 		Content string `json:"content"`
 	} `json:"delta"`
+	FinishReason *string `json:"finish_reason"`
 }
 
 type streamEvent struct {
 	ID      string         `json:"id"`
 	Object  string         `json:"object"`
+	Created int64          `json:"created"`
+	Model   string         `json:"model"`
 	Choices []streamChoice `json:"choices"`
 }
 
@@ -53,7 +93,13 @@ type sseError struct {
 
 func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	var req completionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Messages) == 0 {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("[REQ] decode error: %v", err)
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Messages) == 0 {
+		log.Printf("[REQ] no messages in request")
 		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
 		return
 	}
@@ -66,10 +112,20 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[%s] IN from=%s model=%q stream=%v", id, clientIP, req.Model, req.Stream)
 
 	ctx := reqid.With(r.Context(), id)
+
+	msgs := make([]provider.Message, len(req.Messages))
+	for i, m := range req.Messages {
+		msgs[i] = m.toProviderMessage()
+	}
+
 	provReq := &provider.Request{
-		Model:    req.Model,
-		Messages: req.Messages,
-		Stream:   req.Stream,
+		Model:       req.Model,
+		Messages:    msgs,
+		Stream:      req.Stream,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
+		MaxTokens:   req.MaxTokens,
+		Seed:        req.Seed,
 	}
 
 	if !req.Stream {
@@ -87,12 +143,14 @@ func (s *Server) handleComplete(w http.ResponseWriter, r *http.Request, req *pro
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(completionResponse{
-		ID:     resp.ID,
-		Object: "chat.completion",
-		Model:  resp.Model,
+		ID:      resp.ID,
+		Object:  "chat.completion",
+		Created: time.Now().Unix(),
+		Model:   resp.Model,
 		Choices: []choice{{
-			Index:   0,
-			Message: provider.Message{Role: "assistant", Content: resp.Content},
+			Index:        0,
+			Message:      provider.Message{Role: "assistant", Content: resp.Content},
+			FinishReason: "stop",
 		}},
 		Usage: resp.Usage,
 	})
@@ -122,16 +180,18 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 		s.metrics.StreamDuration.Add(time.Since(start).Milliseconds())
 	}()
 
-	ch, err := s.router.Stream(r.Context(), req)
+	resolvedModel, ch, err := s.router.Stream(r.Context(), req)
 	if err != nil {
 		writeSSEError(w, err.Error())
 		flusher.Flush()
 		return
 	}
 
+	created := time.Now().Unix()
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
+	stopReason := "stop"
 	for {
 		select {
 		case <-r.Context().Done():
@@ -142,6 +202,17 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 			flusher.Flush()
 		case chunk, ok := <-ch:
 			if !ok {
+				// Send final chunk with finish_reason before [DONE].
+				data, _ := json.Marshal(streamEvent{
+					ID:      "",
+					Object:  "chat.completion.chunk",
+					Created: created,
+					Model:   resolvedModel,
+					Choices: []streamChoice{{
+						FinishReason: &stopReason,
+					}},
+				})
+				fmt.Fprintf(w, "data: %s\n\n", data)
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				flusher.Flush()
 				return
@@ -152,9 +223,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 				return
 			}
 			data, _ := json.Marshal(streamEvent{
-				Object: "chat.completion.chunk",
+				Object:  "chat.completion.chunk",
+				Created: created,
+				Model:   resolvedModel,
 				Choices: []streamChoice{{
 					Delta: struct {
+						Role    string `json:"role,omitempty"`
 						Content string `json:"content"`
 					}{Content: chunk.Delta},
 				}},

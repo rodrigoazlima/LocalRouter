@@ -111,7 +111,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 curl http://localhost:8080/models
 ```
 
-Works with any OpenAI-compatible client — just set `base_url` to `http://localhost:8080`.
+Works with any OpenAI-compatible client — set `base_url` to `http://localhost:8080` or `http://localhost:8080/v1` (both work).
 
 ---
 
