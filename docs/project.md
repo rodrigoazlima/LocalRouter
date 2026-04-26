@@ -61,13 +61,12 @@ Core behavior:
 
 1. Request received at `/v1/chat/completions`
 2. Input normalized
-3. Router evaluates Tier 1 (local)
-4. If local succeeds → return response
-5. If local fails → evaluate Tier 2
-6. Select first non-blocked remote provider
-7. Execute request
-8. Update cache based on response outcome
-9. Return response
+3. Router evaluates providers in priority order (lowest priority value = highest preference)
+4. If provider succeeds → return response
+5. If provider fails → update state, skip, and try next provider
+6. Execute request on available provider
+7. Update state based on response outcome
+8. Return response
 
 ---
 
@@ -96,8 +95,9 @@ Core behavior:
 
 **Behavior:**
 
-* `"model": "auto"` triggers routing logic
-* Explicit model bypasses routing (direct execution if mapped)
+* `"model": "auto"` triggers routing through global priority list
+* Explicit model routes to providers that support it
+* Empty model uses configured `default_model`
 
 ---
 
@@ -150,104 +150,71 @@ Core behavior:
 
 ## 5. Routing Strategy
 
-### Tier 1: Local Execution (Primary)
+Provider routing follows a priority-based approach:
 
-**Evaluation Criteria:**
+1. **Priority Order:** Providers with lower `priority` values are tried first
+2. **State Check:** Skip providers in BLOCKED, EXHAUSTED, or UNHEALTHY state
+3. **Rate Limiting:** Respect per-provider rate limits (configured via `limits`)
+4. **Failover:** On failure, provider enters BLOCKED state for configured `recovery_window`, next provider tried
 
-* Node reachable
-* Status = READY
-* Latency below threshold (configurable)
-
-**Execution Modes:**
-
-* Single-node direct routing
-* Multi-node: first-available or round-robin (optional, simple)
-
-**Failure Conditions:**
-
-* Connection failure
-* Timeout exceeded
-* HTTP 5xx
-* Explicit “not ready” signal
-
-If any condition triggers → escalate to Tier 2
-
----
-
-### Tier 2: Remote Providers (Fallback)
-
-**Selection Rules:**
-
-1. Iterate provider list in configured order
-2. Skip providers marked as BLOCKED
-3. Select first AVAILABLE provider
-4. Execute request
-
-**Failure Handling:**
-
-* On failure, update cache state
-* Continue to next provider
-* If all providers fail → return error to client
+**Recovery Windows:**
+* Each provider has a configurable `recovery_window` (default: 1h)
+* Auth failures (HTTP 401/403) use the same recovery window as other errors
+* Blocked providers automatically return to AVAILABLE after recovery window expires
 
 ---
 
 ## 6. Error-Aware State Management
 
-### Cache Design
+### Provider State Machine
 
-* In-memory key-value store
-* Key: `provider_id`
-* Value:
+Providers transition between states based on health checks and request outcomes:
 
-```json
-{
-  "state": "available | blocked",
-  "reason": "tier_a | tier_b",
-  "expires_at": timestamp
-}
+**States:**
+* **AVAILABLE:** Ready to receive requests
+* **UNHEALTHY:** Health check failed (local providers only)
+* **EXHAUSTED:** Rate limit reached, resets when window expires
+* **BLOCKED:** Request failure, blocked for configured `recovery_window`
+
+---
+
+### Recovery Configuration
+
+Each provider can configure its recovery behavior via `recovery_window`:
+
+```yaml
+providers:
+  - id: my-provider
+    type: ollama
+    endpoint: http://localhost:11434
+    recovery_window: 5m  # how long BLOCKED state lasts (default: 1h)
 ```
 
----
+**Behavior:**
+* On failure, provider is blocked for the configured duration
+* After `recovery_window` expires, provider returns to AVAILABLE state
+* No manual intervention required for recovery
+### State Management
 
-### Error Classification
-
-#### Tier A Errors (Transient)
-
-* Rate limit exceeded
-* Overloaded / busy responses
-* 429 or equivalent signals
-
-**Action:**
-
-* Mark provider as BLOCKED
-* TTL: 1 hour
+The system uses a state manager that:
+* Tracks per-provider blocked/unhealthy/exhausted states with timestamps
+* Evaluates state transitions based on time-based expiry
+* Provides quick state lookups during routing decisions
 
 ---
 
-#### Tier B Errors (Persistent)
+## 7. Rate Limit Tracking
 
-* Authentication failure
-* Invalid request format
-* Misconfiguration
-* Repeated 4xx (non-rate limit)
+### Inputs
 
-**Action:**
+* HTTP status codes
+* Response headers (e.g., remaining quota)
+* Error payload inspection
 
-* Mark provider as BLOCKED
-* TTL: 24 hours
+### Behavior
 
----
-
-### Cache Behavior
-
-* On each request:
-
-  * Check provider state before selection
-  * Skip if `state = blocked` and `now < expires_at`
-* On TTL expiration:
-
-  * Automatically return to AVAILABLE state
-* No active probing required; passive recovery
+* Detect threshold breaches
+* Update provider exhaustion state
 
 ---
 
@@ -269,28 +236,28 @@ No predictive throttling. Reactive only.
 
 ---
 
-## 8. Local Node Management
+## 7. Local Node Management
 
 ### Node States
 
-* READY
-* DEGRADED (high latency)
-* UNAVAILABLE
+* **READY:** Healthy and responding normally
+* **DEGRADED:** High latency above configured threshold
+* **UNAVAILABLE:** Health check failed or connection error
 
 ### Health Signals
 
-* Heartbeat endpoint
-* Passive latency observation
-* Timeout tracking
+* Periodic background health checks
+* Passive latency observation from requests
+* Timeout tracking per request
 
 ### Selection Rule
 
-* Prefer lowest-latency READY node
-* If none available → Tier 2
+* Local nodes are prioritized first (lowest priority values)
+* If all local nodes unavailable, remote providers are tried
 
 ---
 
-## 9. Streaming Handling
+## 8. Streaming Handling
 
 * Pass-through streaming from selected backend
 * Normalize chunk format
@@ -299,69 +266,78 @@ No predictive throttling. Reactive only.
 
 ---
 
-## 10. Configuration Model
+## 9. Configuration Model
 
 Example:
 
 ```yaml
-local:
-  nodes:
-    - id: node-1
-      endpoint: http://localhost:11434
-      timeout_ms: 3000
-
-remote:
-  providers:
-    - id: provider-1
-      endpoint: https://api.provider1.com
-      api_key: ${API_KEY_1}
-    - id: provider-2
-      endpoint: https://api.provider2.com
-      api_key: ${API_KEY_2}
+version: 2
 
 routing:
+  default_model: llama3.2:latest
   latency_threshold_ms: 2000
-  fallback_enabled: true
+
+providers:
+  - id: ollama-local
+    type: ollama
+    endpoint: http://localhost:11434
+    timeout_ms: 3000
+    recovery_window: 5m
+    models:
+      - id: llama3.2:latest
+        priority: 1
+
+  - id: groq-1
+    type: openai-compatible
+    endpoint: https://api.groq.com/openai/v1
+    api_key: ${GROQ_KEY}
+    limits:
+      requests: 100
+      window: 1m
+    recovery_window: 10m
+    models:
+      - id: llama-3.1-8b-instant
+        priority: 10
 ```
 
 ---
 
-## 11. Performance Targets
+## 10. Performance Targets
 
 * Routing overhead: < 10ms
-* Local-first success rate: maximized
+* Provider selection time: < 5ms
 * Failover decision time: < 5ms
-* Memory footprint: minimal (in-memory cache only)
+* Memory footprint: minimal (in-memory state only)
 
 ---
 
-## 12. Failure Modes
+## 11. Failure Modes
 
-| Scenario                   | Behavior                          |
-| -------------------------- | --------------------------------- |
-| Local node timeout         | Immediate fallback                |
-| Local node partial failure | Retry next local node or fallback |
-| Remote rate limit          | Cache block (1h)                  |
-| Remote auth failure        | Cache block (24h)                 |
-| All providers unavailable  | Return structured error           |
+| Scenario                   | Behavior                                     |
+| -------------------------- | -------------------------------------------- |
+| Local node timeout         | Immediate fallback to remote providers       |
+| Provider rate limit        | Blocked for configured recovery_window       |
+| Auth failure (401/403)     | Blocked for configured recovery_window       |
+| All providers unavailable  | Return structured error                      |
 
 ---
 
-## 13. Design Constraints
+## 12. Design Constraints
 
 * No complex load balancing algorithms
-* Deterministic routing order
+* Deterministic priority-based routing order
 * In-memory state only (no external DB)
 * Prioritize availability over optimal distribution
-* Avoid retry storms through caching
+* Avoid retry storms through provider blocking
 
 ---
 
-## 14. End State
+## 13. End State
 
 A deterministic routing layer that:
 
-* Maximizes use of local compute
-* Minimizes failed external calls
-* Adapts to provider instability via memory-cached state
+* Maximizes use of preferred providers based on priority
+* Minimizes failed external calls through smart failover
+* Adapts to provider instability via time-based blocking
+* Uses per-provider `recovery_window` for consistent state management
 * Maintains a single, stable API surface for all inference paths
