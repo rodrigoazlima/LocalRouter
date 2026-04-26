@@ -31,7 +31,7 @@ func TestComplete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := openaicompat.New("test", srv.URL, "test-key", 3000, 0)
+	a := openaicompat.New("test", srv.URL, "test-key", 3000, 0, "")
 	resp, err := a.Complete(context.Background(), &provider.Request{
 		Model:    "gpt-4o",
 		Messages: []provider.Message{{Role: "user", Content: "Hi"}},
@@ -53,7 +53,7 @@ func TestComplete_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := openaicompat.New("test", srv.URL, "", 3000, 0)
+	a := openaicompat.New("test", srv.URL, "", 3000, 0, "")
 	_, err := a.Complete(context.Background(), &provider.Request{
 		Model:    "gpt-4o",
 		Messages: []provider.Message{{Role: "user", Content: "Hi"}},
@@ -77,7 +77,7 @@ func TestStream_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := openaicompat.New("test", srv.URL, "", 3000, 0)
+	a := openaicompat.New("test", srv.URL, "", 3000, 0, "")
 	ch, err := a.Stream(context.Background(), &provider.Request{
 		Model:    "gpt-4o",
 		Messages: []provider.Message{{Role: "user", Content: "Hi"}},
@@ -106,7 +106,7 @@ func TestHealthCheck_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := openaicompat.New("test", srv.URL, "", 3000, 0)
+	a := openaicompat.New("test", srv.URL, "", 3000, 0, "")
 	if err := a.HealthCheck(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

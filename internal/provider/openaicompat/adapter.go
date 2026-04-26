@@ -17,21 +17,26 @@ type Adapter struct {
 	id           string
 	endpoint     string
 	apiKey       string
+	chatPath     string
 	client       *http.Client
 	streamClient *http.Client
 }
 
-func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int) *Adapter {
+func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int, chatPath string) *Adapter {
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
 	}
 	if streamTimeoutMs <= 0 {
 		streamTimeoutMs = timeoutMs
 	}
+	if chatPath == "" {
+		chatPath = "/v1/chat/completions"
+	}
 	return &Adapter{
 		id:           id,
 		endpoint:     strings.TrimRight(endpoint, "/"),
 		apiKey:       apiKey,
+		chatPath:     chatPath,
 		client:       &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
 		streamClient: &http.Client{Timeout: time.Duration(streamTimeoutMs) * time.Millisecond},
 	}
@@ -82,7 +87,7 @@ func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provide
 		Seed:        req.Seed,
 	})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		a.endpoint+"/v1/chat/completions", bytes.NewReader(body))
+		a.endpoint+a.chatPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +130,7 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 		Seed:        req.Seed,
 	})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		a.endpoint+"/v1/chat/completions", bytes.NewReader(body))
+		a.endpoint+a.chatPath, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

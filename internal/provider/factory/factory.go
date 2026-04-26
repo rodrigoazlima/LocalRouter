@@ -27,9 +27,9 @@ func New(p config.ProviderConfig) (provider.Provider, error) {
 	}
 	switch p.Type {
 	case "ollama":
-		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs), nil
+		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs, p.ChatPath), nil
 	case "openai-compatible", "mistral":
-		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs), nil
+		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs, p.ChatPath), nil
 	case "anthropic":
 		return anthropic.New(p.ID, p.APIKey, "", timeoutMs, streamTimeoutMs), nil
 	case "google":

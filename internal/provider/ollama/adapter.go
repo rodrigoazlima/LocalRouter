@@ -15,9 +15,9 @@ type Adapter struct {
 	*openaicompat.Adapter
 }
 
-func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int) *Adapter {
+func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int, chatPath string) *Adapter {
 	return &Adapter{
-		Adapter: openaicompat.New(id, endpoint, apiKey, timeoutMs, streamTimeoutMs),
+		Adapter: openaicompat.New(id, endpoint, apiKey, timeoutMs, streamTimeoutMs, chatPath),
 	}
 }
 

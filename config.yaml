@@ -101,7 +101,8 @@ providers:
 
   - id: github-models-1
     type: openai-compatible
-    endpoint: https://models.github.ai/inference
+    endpoint: https://models.github.ai
+    chat_path: /inference/chat/completions
     api_key: ${GITHUB_TOKEN}
     limits:
       requests: 50

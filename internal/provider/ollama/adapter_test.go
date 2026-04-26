@@ -23,7 +23,7 @@ func TestOllamaHealthCheck_UsesApiTags(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := ollama.New("ollama-1", srv.URL, "", 3000, 0)
+	a := ollama.New("ollama-1", srv.URL, "", 3000, 0, "")
 	if err := a.HealthCheck(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -38,19 +38,19 @@ func TestOllamaHealthCheck_Non200_Error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := ollama.New("ollama-1", srv.URL, "", 3000, 0)
+	a := ollama.New("ollama-1", srv.URL, "", 3000, 0, "")
 	if err := a.HealthCheck(context.Background()); err == nil {
 		t.Fatal("expected error for non-200")
 	}
 }
 
 func TestOllamaType(t *testing.T) {
-	a := ollama.New("x", "http://localhost", "", 3000, 0)
+	a := ollama.New("x", "http://localhost", "", 3000, 0, "")
 	if a.Type() != "ollama" {
 		t.Fatalf("expected ollama, got %s", a.Type())
 	}
 }
 
 func TestOllama_ImplementsProvider(t *testing.T) {
-	var _ provider.Provider = ollama.New("x", "http://localhost", "", 3000, 0)
+	var _ provider.Provider = ollama.New("x", "http://localhost", "", 3000, 0, "")
 }
