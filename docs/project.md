@@ -28,8 +28,8 @@ Core behavior:
 
 **2. Router Engine**
 
-* Implements Tier 1 → Tier 2 decision flow
-* Evaluates availability, latency, and cached provider state
+* Evaluates provider priority order, availability, and cached state
+* Implements failover logic based on configured recovery windows
 
 **3. Local Execution Layer**
 
@@ -44,7 +44,7 @@ Core behavior:
 **5. State Cache (In-Memory)**
 
 * Tracks provider health and block states
-* TTL-based expiration
+* TTL-based expiration for blocked providers
 
 **6. Health Monitor**
 
@@ -136,8 +136,7 @@ Core behavior:
     "remote_requests": 3200
   },
   "errors": {
-    "tier1_failures": 210,
-    "tier2_failures": 45
+    "failures": 255
   },
   "cache": {
     "blocked_providers": 2,
@@ -194,6 +193,7 @@ providers:
 * On failure, provider is blocked for the configured duration
 * After `recovery_window` expires, provider returns to AVAILABLE state
 * No manual intervention required for recovery
+
 ### State Management
 
 The system uses a state manager that:
@@ -215,28 +215,11 @@ The system uses a state manager that:
 
 * Detect threshold breaches
 * Update provider exhaustion state
+* No predictive throttling. Reactive only.
 
 ---
 
-## 7. Rate Limit Tracking
-
-### Inputs
-
-* HTTP status codes
-* Response headers (e.g., remaining quota)
-* Error payload inspection
-
-### Behavior
-
-* Detect threshold breaches
-* Immediately classify into Tier A or Tier B
-* Update cache
-
-No predictive throttling. Reactive only.
-
----
-
-## 7. Local Node Management
+## 8. Local Node Management
 
 ### Node States
 
@@ -257,7 +240,7 @@ No predictive throttling. Reactive only.
 
 ---
 
-## 8. Streaming Handling
+## 9. Streaming Handling
 
 * Pass-through streaming from selected backend
 * Normalize chunk format
@@ -266,7 +249,7 @@ No predictive throttling. Reactive only.
 
 ---
 
-## 9. Configuration Model
+## 10. Configuration Model
 
 Example:
 
@@ -302,7 +285,7 @@ providers:
 
 ---
 
-## 10. Performance Targets
+## 11. Performance Targets
 
 * Routing overhead: < 10ms
 * Provider selection time: < 5ms
@@ -311,7 +294,7 @@ providers:
 
 ---
 
-## 11. Failure Modes
+## 12. Failure Modes
 
 | Scenario                   | Behavior                                     |
 | -------------------------- | -------------------------------------------- |
@@ -322,7 +305,7 @@ providers:
 
 ---
 
-## 12. Design Constraints
+## 13. Design Constraints
 
 * No complex load balancing algorithms
 * Deterministic priority-based routing order
@@ -332,7 +315,7 @@ providers:
 
 ---
 
-## 13. End State
+## 14. End State
 
 A deterministic routing layer that:
 
