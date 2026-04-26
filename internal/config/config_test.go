@@ -144,11 +144,13 @@ providers:
     endpoint: https://api.openai.com/v1
     models:
       - id: gpt-4o
-        priority: 0
 `)
-	_, err := config.Load(path)
-	if err == nil {
-		t.Fatal("expected error for model with priority=0")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Providers[0].Models[0].Priority != 1 {
+		t.Fatalf("expected auto-filled priority=1, got %d", cfg.Providers[0].Models[0].Priority)
 	}
 }
 

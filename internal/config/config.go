@@ -178,6 +178,8 @@ func Load(path string) (*Config, error) {
 			}
 		}
 
+		fillPriorities(&cfg)
+
 		if err := parseDurations(&cfg); err != nil {
 			return nil, err
 		}
@@ -301,6 +303,22 @@ func parseDurations(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+// fillPriorities assigns sequential priorities (1, 2, 3, …) to models whose
+// priority is missing, zero, or negative, preserving the order they appear in
+// the config file. Models with an already-valid priority keep their value.
+func fillPriorities(cfg *Config) {
+	counter := 1
+	for i := range cfg.Providers {
+		for j := range cfg.Providers[i].Models {
+			m := &cfg.Providers[i].Models[j]
+			if m.Priority <= 0 {
+				m.Priority = counter
+			}
+			counter++
+		}
+	}
 }
 
 // validate enforces all schema rules for the old (version 2) schema.

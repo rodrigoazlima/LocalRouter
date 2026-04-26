@@ -5,7 +5,7 @@ routing:
   latency_threshold_ms: 2000
 
 providers:
-  # --- Local nodes (priority 1-9) ---
+  # --- Local nodes ---
   - id: ollama-local
     type: ollama
     endpoint: http://localhost:11434
@@ -14,7 +14,6 @@ providers:
     recovery_window: 2m
     models:
       - id: qwen3-coder-next
-        priority: 1
         is_free: true
 
   - id: lmstudio-local
@@ -25,7 +24,6 @@ providers:
     recovery_window: 2m
     models:
       - id: qwen3-coder-next
-        priority: 2
         is_free: true
 
   - id: vllm-local
@@ -36,10 +34,9 @@ providers:
     recovery_window: 2m
     models:
       - id: llama3.2:latest
-        priority: 4
         is_free: true
 
-  # --- Remote: free aggregators (priority 10-19) ---
+  # --- Remote: free aggregators ---
   - id: openrouter-1
     type: openai-compatible
     endpoint: https://openrouter.ai/api/v1
@@ -50,22 +47,17 @@ providers:
     recovery_window: 15m
     models:
       - id: meta-llama/llama-3.2-3b-instruct:free
-        priority: 10
         is_free: true
       - id: meta-llama/llama-3.3-70b-instruct:free
-        priority: 11
         is_free: true
       - id: deepseek/deepseek-r1:free
-        priority: 12
         is_free: true
       - id: google/gemini-2.0-flash-exp:free
-        priority: 13
         is_free: true
       - id: moonshotai/kimi-k2:free
-        priority: 14
         is_free: true
 
-  # --- Remote: high-RPM free inference (priority 20-29) ---
+  # --- Remote: high-RPM free inference ---
   - id: groq-1
     type: openai-compatible
     endpoint: https://api.groq.com/openai/v1
@@ -76,10 +68,8 @@ providers:
     recovery_window: 10m
     models:
       - id: llama-3.1-8b-instant
-        priority: 20
         is_free: true
       - id: llama-3.3-70b-versatile
-        priority: 21
         is_free: true
 
   - id: nvidia-1
@@ -92,7 +82,6 @@ providers:
     models:
       - id: mistralai/devstral-2-123b-instruct-2512
         api_key: ${NVIDIA_KEY}
-        priority: 25
         is_free: true
         temperature: 0.15
         top_p: 0.95
@@ -110,16 +99,13 @@ providers:
     recovery_window: 15m
     models:
       - id: openai/gpt-5
-        priority: 24
         is_free: true
       - id: gpt-4o
-        priority: 25
         is_free: true
       - id: meta-llama/llama-4-maverick
-        priority: 26
         is_free: true
 
-  # --- Remote: rate-limited direct APIs (priority 30-39) ---
+  # --- Remote: rate-limited direct APIs ---
   - id: mistral-1
     type: openai-compatible
     endpoint: https://api.mistral.ai/v1
@@ -130,10 +116,8 @@ providers:
     recovery_window: 15m
     models:
       - id: mistral-small-latest
-        priority: 30
         is_free: true
       - id: open-mistral-nemo
-        priority: 31
         is_free: true
 
   - id: google-1
@@ -145,10 +129,8 @@ providers:
     recovery_window: 15m
     models:
       - id: gemini-2.0-flash
-        priority: 32
         is_free: true
       - id: gemini-1.5-flash
-        priority: 33
         is_free: true
 
   - id: cohere-1
@@ -160,10 +142,8 @@ providers:
     recovery_window: 15m
     models:
       - id: command-r
-        priority: 34
         is_free: true
       - id: command-r-plus
-        priority: 35
         is_free: true
 
   - id: zhipu-1
@@ -176,10 +156,9 @@ providers:
     recovery_window: 15m
     models:
       - id: glm-4-flash
-        priority: 36
         is_free: true
 
-  # --- Paid providers (uncomment to enable, set priority as needed) ---
+  # --- Paid providers (uncomment to enable) ---
   # - id: openai-1
   #   type: openai-compatible
   #   endpoint: https://api.openai.com/v1
@@ -187,10 +166,8 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: gpt-4o-mini
-  #       priority: 50
   #       is_free: false
   #     - id: gpt-4o
-  #       priority: 51
   #       is_free: false
 
   # - id: anthropic-1
@@ -199,7 +176,6 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: claude-3-5-haiku-20241022
-  #       priority: 52
   #       is_free: false
 
   # - id: deepseek-1
@@ -209,5 +185,4 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: deepseek-chat
-  #       priority: 53
   #       is_free: false
