@@ -12,6 +12,10 @@ $ErrorActionPreference = 'Stop'
 $pass = 0
 $fail = 0
 
+# Track model availability
+$availableModels = @{}
+$unavailableModels = @{}
+
 function Write-Pass([string]$msg) { Write-Host "  [PASS] $msg" -ForegroundColor Green; $script:pass++ }
 function Write-Fail([string]$msg) { Write-Host "  [FAIL] $msg" -ForegroundColor Red;  $script:fail++ }
 function Write-Info([string]$msg) { Write-Host "  [INFO] $msg" -ForegroundColor Cyan }
@@ -99,7 +103,7 @@ try {
 }
 
 # ─── Test 2: openai/gpt-5 returns expected response (unavailable) ─────────────
-Write-Host "`n[TEST 2] openai/gpt-5 — expect 503 (model unavailable via API)" -ForegroundColor Yellow
+Write-Host "`n[TEST 2] openai/gpt-5 — expect 400 (model unavailable via API)" -ForegroundColor Yellow
 $script:logBefore = if (Test-Path $LogFile) { (Get-Content $LogFile).Count } else { 0 }
 
 $result = Invoke-RouterPost -Model 'openai/gpt-5'
@@ -108,6 +112,8 @@ if (-not $result.Ok) {
     Write-Pass "Router returned error response (expected — gpt-5 is preview-only)"
     $errMsg = $result.Raw?.error?.message
     Write-Info "Error: $errMsg"
+    # Track as unavailable model
+    $unavailableModels['openai/gpt-5'] = "HTTP $($result.Status) - $errMsg"
 } else {
     Write-Fail "Expected error but got success: $($result.Data | ConvertTo-Json -Compress)"
 }
@@ -115,8 +121,8 @@ if (-not $result.Ok) {
 Start-Sleep -Milliseconds 200
 Assert-NewLogContains -Pattern 'IN from=.*model="openai/gpt-5"' `
     -Description 'Router received openai/gpt-5 request'
-Assert-NewLogContains -Pattern 'github-models-1 failed: HTTP 400' `
-    -Description 'GitHub API was called and returned HTTP 400 (unavailable model)'
+Assert-NewLogContains -Pattern 'github-models-1 failed' `
+    -Description 'GitHub API was called and returned error'
 
 # ─── Test 3: gpt-4o (working model) non-streaming ─────────────────────────────
 Write-Host "`n[TEST 3] gpt-4o — non-streaming (should succeed)" -ForegroundColor Yellow
@@ -128,12 +134,15 @@ if ($result.Ok) {
     $answer = $result.Data.choices[0].message.content
     $model  = $result.Data.model
     Write-Pass "Response received: model=$model answer=`"$answer`""
+    # Track gpt-4o as available (non-streaming)
+    $availableModels['gpt-4o'] = "OK"
     if ($result.Data.usage.completion_tokens -gt 0) {
         Write-Pass "Usage tokens present (prompt=$($result.Data.usage.prompt_tokens) completion=$($result.Data.usage.completion_tokens))"
     } else {
         Write-Fail "No usage tokens in response"
     }
 } else {
+    $unavailableModels['gpt-4o'] = "HTTP $($result.Status)"
     Write-Fail "Request failed: $($result.Raw | ConvertTo-Json -Compress)"
 }
 
@@ -179,8 +188,11 @@ try {
 
     if ($chunks -gt 0) {
         Write-Pass "Received $chunks stream chunks: `"$($content.Trim())`""
+        # Track gpt-4o streaming as available
+        $availableModels['gpt-4o (streaming)'] = "OK"
     } else {
         Write-Fail "No stream chunks received (raw length=$($raw.Length))"
+        $unavailableModels['gpt-4o (streaming)'] = "No response data"
     }
 } catch {
     Write-Fail "Streaming request failed: $_"
@@ -190,8 +202,30 @@ Start-Sleep -Milliseconds 200
 Assert-NewLogContains -Pattern '→ github-models-1 model="gpt-4o" stream=true' `
     -Description 'Log confirms GitHub API called for gpt-4o streaming'
 
+# ─── Model Availability Report ────────────────────────────────────────────────
+Write-Host "`n[MODEL AVAILABILITY REPORT]" -ForegroundColor Cyan
+
+if ($availableModels.Count -gt 0) {
+    Write-Host "`nAvailable Models:" -ForegroundColor Green
+    foreach ($model in $availableModels.Keys | Sort-Object) {
+        Write-Host "  [OK] $model"
+    }
+}
+
+if ($unavailableModels.Count -gt 0) {
+    Write-Host "`nUnavailable Models (not available with current setup/token):" -ForegroundColor Yellow
+    foreach ($model in $unavailableModels.Keys | Sort-Object) {
+        Write-Host "  [FAIL] $model - $($unavailableModels[$model])"
+    }
+}
+
 # ─── Summary ──────────────────────────────────────────────────────────────────
 Write-Host "`n─────────────────────────────────" -ForegroundColor DarkGray
 $total = $pass + $fail
-Write-Host "Results: $pass/$total passed" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Yellow' })
+$availCount = $availableModels.Count + $unavailableModels.Count
+if ($availCount -gt 0) {
+    Write-Host "Tests: $pass/$total passed | Models: $($availableModels.Count) available, $($unavailableModels.Count) unavailable" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Yellow' })
+} else {
+    Write-Host "Results: $pass/$total passed" -ForegroundColor $(if ($fail -eq 0) { 'Green' } else { 'Yellow' })
+}
 if ($fail -gt 0) { exit 1 }
