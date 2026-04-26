@@ -20,12 +20,6 @@ var (
 	ErrAllProvidersFailed = errors.New("all providers failed or unavailable")
 )
 
-// tierADuration is the short block duration applied to transient failures and startup probe failures.
-const tierADuration = time.Hour
-
-// tierBDuration is the long block duration applied to auth failures (HTTP 401/403) at request time.
-const tierBDuration = 24 * time.Hour
-
 type Config struct {
 	DefaultModel    string
 	RecoveryWindows map[string]time.Duration
@@ -120,15 +114,12 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, re
 }
 
 // classifyError returns the block duration for a provider error.
-// HTTP 401/403 at request time → TierB (24 h); everything else → TierA (1 h).
-func classifyError(err error) time.Duration {
+func classifyError(err error, recoveryWindow time.Duration) time.Duration {
 	var httpErr *provider.HTTPError
-	if errors.As(err, &httpErr) {
-		if httpErr.StatusCode == 401 || httpErr.StatusCode == 403 {
-			return tierBDuration
-		}
+	if errors.As(err, &httpErr) && (httpErr.StatusCode == 401 || httpErr.StatusCode == 403) {
+		return recoveryWindow
 	}
-	return tierADuration
+	return recoveryWindow
 }
 
 func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Response, error) {
@@ -160,7 +151,8 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 				r.metrics.Tier1Failures.Add(1)
 			}
 			if entry.IsRemote {
-				blockDur := classifyError(err)
+				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+				blockDur := classifyError(err, recoveryWindow)
 				r.state.Block(p.ID(), blockDur)
 				r.metrics.ProviderBlockEvents.Add(1)
 			}
@@ -212,7 +204,8 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 				r.metrics.Tier1Failures.Add(1)
 			}
 			if entry.IsRemote {
-				blockDur := classifyError(err)
+				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+				blockDur := classifyError(err, recoveryWindow)
 				r.state.Block(p.ID(), blockDur)
 				r.metrics.ProviderBlockEvents.Add(1)
 			}

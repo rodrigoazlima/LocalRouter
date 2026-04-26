@@ -21,17 +21,21 @@ func New(p config.ProviderConfig) (provider.Provider, error) {
 	if timeoutMs <= 0 {
 		timeoutMs = defaultTimeoutMs
 	}
+	streamTimeoutMs := p.StreamTimeoutMsOrDefault()
+	if streamTimeoutMs <= 0 {
+		streamTimeoutMs = timeoutMs
+	}
 	switch p.Type {
 	case "ollama":
-		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs), nil
+		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs), nil
 	case "openai-compatible", "mistral":
-		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs), nil
+		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs), nil
 	case "anthropic":
-		return anthropic.New(p.ID, p.APIKey, ""), nil
+		return anthropic.New(p.ID, p.APIKey, "", timeoutMs, streamTimeoutMs), nil
 	case "google":
-		return google.New(p.ID, p.APIKey, ""), nil
+		return google.New(p.ID, p.APIKey, "", timeoutMs, streamTimeoutMs), nil
 	case "cohere":
-		return cohere.New(p.ID, p.APIKey, ""), nil
+		return cohere.New(p.ID, p.APIKey, "", timeoutMs, streamTimeoutMs), nil
 	default:
 		return nil, fmt.Errorf("unknown provider type: %s", p.Type)
 	}

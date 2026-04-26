@@ -21,16 +21,19 @@ type Adapter struct {
 	streamClient *http.Client
 }
 
-func New(id, endpoint, apiKey string, timeoutMs int) *Adapter {
+func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int) *Adapter {
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
+	}
+	if streamTimeoutMs <= 0 {
+		streamTimeoutMs = timeoutMs
 	}
 	return &Adapter{
 		id:           id,
 		endpoint:     strings.TrimRight(endpoint, "/"),
 		apiKey:       apiKey,
 		client:       &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
-		streamClient: &http.Client{Timeout: 0}, // no timeout; context cancellation handles teardown
+		streamClient: &http.Client{Timeout: time.Duration(streamTimeoutMs) * time.Millisecond},
 	}
 }
 

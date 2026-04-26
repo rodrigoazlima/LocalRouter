@@ -31,7 +31,7 @@ func TestComplete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := anthropic.New("ant-1", "test-key", srv.URL)
+	a := anthropic.New("ant-1", "test-key", srv.URL, 0, 0)
 	resp, err := a.Complete(context.Background(), &provider.Request{
 		Model:    "claude-3-5-sonnet-20241022",
 		Messages: []provider.Message{{Role: "user", Content: "Hi"}},
@@ -53,7 +53,7 @@ func TestComplete_401_ReturnsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := anthropic.New("ant-1", "bad", srv.URL)
+	a := anthropic.New("ant-1", "bad", srv.URL, 0, 0)
 	_, err := a.Complete(context.Background(), &provider.Request{
 		Model: "claude-3-5-sonnet-20241022", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
@@ -73,7 +73,7 @@ func TestStream_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := anthropic.New("ant-1", "key", srv.URL)
+	a := anthropic.New("ant-1", "key", srv.URL, 0, 0)
 	ch, err := a.Stream(context.Background(), &provider.Request{
 		Model: "claude-3-5-sonnet-20241022", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})

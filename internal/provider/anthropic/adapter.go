@@ -25,16 +25,22 @@ type Adapter struct {
 	streamClient *http.Client
 }
 
-func New(id, apiKey, endpoint string) *Adapter {
+func New(id, apiKey, endpoint string, timeoutMs, streamTimeoutMs int) *Adapter {
 	if endpoint == "" {
 		endpoint = "https://api.anthropic.com"
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = 30000
+	}
+	if streamTimeoutMs <= 0 {
+		streamTimeoutMs = timeoutMs
 	}
 	return &Adapter{
 		id:           id,
 		apiKey:       apiKey,
 		endpoint:     strings.TrimRight(endpoint, "/"),
-		client:       &http.Client{Timeout: 30 * time.Second},
-		streamClient: &http.Client{Timeout: 0},
+		client:       &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		streamClient: &http.Client{Timeout: time.Duration(streamTimeoutMs) * time.Millisecond},
 	}
 }
 

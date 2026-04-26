@@ -32,7 +32,7 @@ func TestComplete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := google.New("g-1", "test-key", srv.URL)
+	a := google.New("g-1", "test-key", srv.URL, 0, 0)
 	resp, err := a.Complete(context.Background(), &provider.Request{
 		Model:    "gemini-1.5-flash",
 		Messages: []provider.Message{{Role: "user", Content: "Hi"}},
@@ -51,7 +51,7 @@ func TestComplete_429_ReturnsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := google.New("g-1", "key", srv.URL)
+	a := google.New("g-1", "key", srv.URL, 0, 0)
 	_, err := a.Complete(context.Background(), &provider.Request{
 		Model: "gemini-1.5-flash", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
@@ -72,7 +72,7 @@ func TestStream_UsesStreamGenerateContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := google.New("g-1", "key", srv.URL)
+	a := google.New("g-1", "key", srv.URL, 0, 0)
 	ch, err := a.Stream(context.Background(), &provider.Request{
 		Model: "gemini-1.5-flash", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})

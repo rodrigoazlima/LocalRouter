@@ -28,7 +28,7 @@ func TestComplete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := cohere.New("coh-1", "test-key", srv.URL)
+	a := cohere.New("coh-1", "test-key", srv.URL, 0, 0)
 	resp, err := a.Complete(context.Background(), &provider.Request{
 		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
@@ -46,7 +46,7 @@ func TestComplete_429_ReturnsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := cohere.New("coh-1", "key", srv.URL)
+	a := cohere.New("coh-1", "key", srv.URL, 0, 0)
 	_, err := a.Complete(context.Background(), &provider.Request{
 		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
@@ -66,7 +66,7 @@ func TestStream_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	a := cohere.New("coh-1", "key", srv.URL)
+	a := cohere.New("coh-1", "key", srv.URL, 0, 0)
 	ch, err := a.Stream(context.Background(), &provider.Request{
 		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})

@@ -58,20 +58,29 @@ type RemoteProviderConfig struct {
 
 // ProviderConfig describes a single LLM provider (used internally after normalisation).
 type ProviderConfig struct {
-	ID             string        `yaml:"id"`
-	Type           string        `yaml:"type"`
-	Endpoint       string        `yaml:"endpoint"`
-	APIKey         string        `yaml:"api_key"`
-	TimeoutMs      int           `yaml:"timeout_ms"`
-	RecoveryWindow string        `yaml:"recovery_window"`
-	Limits         *LimitsConfig `yaml:"limits"`
-	Models         []ModelConfig `yaml:"models"`
-	IsRemote       bool          `yaml:"-"` // true for remote providers (new schema)
+	ID              string        `yaml:"id"`
+	Type            string        `yaml:"type"`
+	Endpoint        string        `yaml:"endpoint"`
+	APIKey          string        `yaml:"api_key"`
+	TimeoutMs       int           `yaml:"timeout_ms"`
+	StreamTimeoutMs int           `yaml:"stream_timeout_ms"`
+	RecoveryWindow  string        `yaml:"recovery_window"`
+	Limits          *LimitsConfig `yaml:"limits"`
+	Models          []ModelConfig `yaml:"models"`
+	IsRemote        bool          `yaml:"-"` // true for remote providers (new schema)
 	// Skipped is true when api_key was present in the YAML but resolved to empty
 	// after environment variable expansion.
 	Skipped bool `yaml:"-"`
 
 	recoveryWindowDur time.Duration `yaml:"-"`
+}
+
+// StreamTimeoutMsOrDefault returns StreamTimeoutMs if set, else TimeoutMs.
+func (p ProviderConfig) StreamTimeoutMsOrDefault() int {
+	if p.StreamTimeoutMs > 0 {
+		return p.StreamTimeoutMs
+	}
+	return p.TimeoutMs
 }
 
 // RecoveryWindowDur returns the parsed recovery window duration.
