@@ -11,12 +11,20 @@ providers:
     endpoint: http://localhost:11434
     timeout_ms: 120000
     recovery_window: 2m
+    models:
+      - id: qwen3-coder-next
+        priority: 1
+        is_free: true
 
   - id: lmstudio-local
     type: openai-compatible
     endpoint: http://localhost:1234
     timeout_ms: 120000
     recovery_window: 2m
+    models:
+      - id: qwen3-coder-next
+        priority: 2
+        is_free: true
 
   - id: vllm-local
     type: openai-compatible

@@ -15,10 +15,11 @@ import (
 )
 
 type Adapter struct {
-	id       string
-	apiKey   string
-	endpoint string
-	client   *http.Client
+	id           string
+	apiKey       string
+	endpoint     string
+	client       *http.Client
+	streamClient *http.Client
 }
 
 func New(id, apiKey, endpoint string) *Adapter {
@@ -26,10 +27,11 @@ func New(id, apiKey, endpoint string) *Adapter {
 		endpoint = "https://api.cohere.com"
 	}
 	return &Adapter{
-		id:       id,
-		apiKey:   apiKey,
-		endpoint: strings.TrimRight(endpoint, "/"),
-		client:   &http.Client{Timeout: 30 * time.Second},
+		id:           id,
+		apiKey:       apiKey,
+		endpoint:     strings.TrimRight(endpoint, "/"),
+		client:       &http.Client{Timeout: 30 * time.Second},
+		streamClient: &http.Client{Timeout: 0},
 	}
 }
 
@@ -112,7 +114,7 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
-	resp, err := a.client.Do(httpReq)
+	resp, err := a.streamClient.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}

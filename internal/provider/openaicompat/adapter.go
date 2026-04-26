@@ -14,10 +14,11 @@ import (
 )
 
 type Adapter struct {
-	id       string
-	endpoint string
-	apiKey   string
-	client   *http.Client
+	id           string
+	endpoint     string
+	apiKey       string
+	client       *http.Client
+	streamClient *http.Client
 }
 
 func New(id, endpoint, apiKey string, timeoutMs int) *Adapter {
@@ -25,10 +26,11 @@ func New(id, endpoint, apiKey string, timeoutMs int) *Adapter {
 		timeoutMs = 30000
 	}
 	return &Adapter{
-		id:       id,
-		endpoint: strings.TrimRight(endpoint, "/"),
-		apiKey:   apiKey,
-		client:   &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		id:           id,
+		endpoint:     strings.TrimRight(endpoint, "/"),
+		apiKey:       apiKey,
+		client:       &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		streamClient: &http.Client{Timeout: 0}, // no timeout; context cancellation handles teardown
 	}
 }
 
@@ -131,8 +133,7 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 	} else if a.apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+a.apiKey)
 	}
-	// Use a.client (has timeout) for streaming too
-	resp, err := a.client.Do(httpReq)
+	resp, err := a.streamClient.Do(httpReq)
 	if err != nil {
 		return nil, err
 	}
