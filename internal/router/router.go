@@ -68,6 +68,17 @@ func (r *Router) Update(providers map[string]provider.Provider, reg *registry.Re
 	r.cfg = cfg
 }
 
+// Providers returns a snapshot of the current provider map.
+func (r *Router) Providers() map[string]provider.Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]provider.Provider, len(r.providers))
+	for k, v := range r.providers {
+		out[k] = v
+	}
+	return out
+}
+
 func (r *Router) resolve(model string) []registry.Entry {
 	r.mu.RLock()
 	reg := r.registry

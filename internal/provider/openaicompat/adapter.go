@@ -205,6 +205,39 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
+func (a *Adapter) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint+"/v1/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	if a.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+a.apiKey)
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list models: HTTP %d", resp.StatusCode)
+	}
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("list models: decode: %w", err)
+	}
+	ids := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		if m.ID != "" {
+			ids = append(ids, m.ID)
+		}
+	}
+	return ids, nil
+}
+
 func toOAI(msgs []provider.Message) []oaiMessage {
 	out := make([]oaiMessage, len(msgs))
 	for i, m := range msgs {

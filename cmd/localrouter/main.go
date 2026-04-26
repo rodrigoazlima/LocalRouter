@@ -57,6 +57,7 @@ func main() {
 	}
 
 	runStartupProbes(context.Background(), providers, mon, st, remoteSet, 10000)
+	discoverModels(context.Background(), providers, reg, cfg.Routing.DefaultModel)
 
 	rCfg := router.Config{
 		DefaultModel:    cfg.Routing.DefaultModel,
@@ -113,6 +114,13 @@ func main() {
 	defer stop()
 
 	go func() {
+		log.Print(`
+   _                    _ ____             _
+  | |    ___   ___ __ _| |  _ \ ___  _   _| |_ ___ _ __
+  | |   / _ \ / __/ _` + "`" + ` | | |_) / _ \| | | | __/ _ \ '__'
+  | |__| (_) | (_| (_| | |  _ < (_) | |_| | ||  __/ |
+  |_____\___/ \___\__,_|_|_| \_\___/ \__,_|\__\___|_|
+`)
 		log.Printf("[INIT] listening on %s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil {
 			log.Printf("server: %v", err)
@@ -191,6 +199,30 @@ func runStartupProbes(
 			mon.SetReady(id)
 			log.Printf("[INIT] %s: probe OK (%dms)", id, time.Since(start).Milliseconds())
 		}(id, p)
+	}
+	wg.Wait()
+}
+
+func discoverModels(ctx context.Context, providers map[string]provider.Provider, reg *registry.Registry, defaultModel string) {
+	var wg sync.WaitGroup
+	for id, p := range providers {
+		lister, ok := p.(provider.ModelLister)
+		if !ok {
+			continue
+		}
+		wg.Add(1)
+		go func(id string, lister provider.ModelLister) {
+			defer wg.Done()
+			pCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			models, err := lister.ListModels(pCtx)
+			if err != nil {
+				log.Printf("[INIT] %s: discover models failed: %v", id, err)
+				return
+			}
+			reg.SetDiscoveredModels(id, models, defaultModel)
+			log.Printf("[INIT] %s: discovered %d models", id, len(models))
+		}(id, lister)
 	}
 	wg.Wait()
 }

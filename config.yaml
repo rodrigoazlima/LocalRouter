@@ -12,11 +12,8 @@ providers:
     timeout_ms: 3000
     recovery_window: 2m
     models:
-      - id: llama3.2:latest
+      - id: qwen3-coder-next
         priority: 1
-        is_free: true
-      - id: qwen2.5:7b
-        priority: 2
         is_free: true
 
   - id: lmstudio-local

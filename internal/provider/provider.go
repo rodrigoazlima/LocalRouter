@@ -16,6 +16,11 @@ type Provider interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// ModelLister is implemented by providers that can enumerate their available models.
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]string, error)
+}
+
 type Request struct {
 	Model       string         `json:"model"`
 	Messages    []Message      `json:"messages"`
