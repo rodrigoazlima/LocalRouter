@@ -57,6 +57,23 @@ providers:
       - id: moonshotai/kimi-k2:free
         is_free: true
 
+  - id: kilo-1
+    type: openai-compatible
+    endpoint: https://api.kilo.ai/api/gateway
+    chat_path: /chat/completions
+    api_key: ${KILO_API_KEY}
+    limits:
+      requests: 200
+      window: 1h
+    recovery_window: 15m
+    models:
+      - id: openrouter/auto
+        is_free: true
+      - id: mistral/mistral-small
+        is_free: true
+      - id: google/gemini-2.0-flash
+        is_free: true
+
   # --- Remote: high-RPM free inference ---
   - id: groq-1
     type: openai-compatible
