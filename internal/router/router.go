@@ -81,6 +81,9 @@ func (r *Router) resolve(model string) []registry.Entry {
 
 	switch model {
 	case "":
+		if defaultModel == "" {
+			return reg.GlobalList()
+		}
 		return reg.ForModel(defaultModel)
 	case "auto":
 		return reg.GlobalList()

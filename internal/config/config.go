@@ -328,11 +328,6 @@ func validate(cfg *Config) error {
 		return fmt.Errorf("config version must be 2, got %d", cfg.Version)
 	}
 
-	// Rule 5: routing.default_model must be non-empty.
-	if strings.TrimSpace(cfg.Routing.DefaultModel) == "" {
-		return fmt.Errorf("routing.default_model must not be empty")
-	}
-
 	// Rule 2: provider IDs must be unique.
 	ids := make(map[string]bool, len(cfg.Providers))
 	for _, p := range cfg.Providers {
@@ -374,23 +369,25 @@ func validate(cfg *Config) error {
 		}
 	}
 
-	// Rule 5: default_model must exist in at least one non-skipped provider.
-	defaultModel := cfg.Routing.DefaultModel
-	found := false
-outer:
-	for _, p := range cfg.Providers {
-		if p.Skipped {
-			continue
-		}
-		for _, m := range p.Models {
-			if m.ID == defaultModel {
-				found = true
-				break outer
+	// Rule 5: if default_model is set, it must exist in at least one non-skipped provider.
+	defaultModel := strings.TrimSpace(cfg.Routing.DefaultModel)
+	if defaultModel != "" {
+		found := false
+	outer:
+		for _, p := range cfg.Providers {
+			if p.Skipped {
+				continue
+			}
+			for _, m := range p.Models {
+				if m.ID == defaultModel {
+					found = true
+					break outer
+				}
 			}
 		}
-	}
-	if !found {
-		return fmt.Errorf("routing.default_model %q not found in any non-skipped provider", defaultModel)
+		if !found {
+			return fmt.Errorf("routing.default_model %q not found in any non-skipped provider", defaultModel)
+		}
 	}
 
 	return nil
