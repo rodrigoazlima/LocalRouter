@@ -18,7 +18,7 @@ providers:
 
   - id: openrouter-1
     type: openai-compatible
-    endpoint: https://openrouter.ai/api/v1
+    endpoint: https://openrouter.ai/api
     api_key: ${OPENROUTER_API_KEY}
     limits:
       requests: 20
@@ -146,15 +146,15 @@ providers:
 #        is_free: true
 
   # --- Next avaliable route is selected based in declaration order if no "priority" set ---
-  - id: ollama-local
-    type: ollama
-    endpoint: http://localhost:11434
-    timeout_ms: 30000
-    stream_timeout_ms: 3600000
-    recovery_window: 2m
-    models:
-      - id: qwen3-coder-next
-        is_free: true
+#  - id: ollama-local
+#    type: ollama
+#    endpoint: http://localhost:11434
+#    timeout_ms: 30000
+#    stream_timeout_ms: 3600000
+#    recovery_window: 2m
+#    models:
+#      - id: qwen3-coder-next
+#        is_free: true
 
   - id: lmstudio-local
     type: openai-compatible
@@ -166,15 +166,25 @@ providers:
       - id: qwen3-coder-next
         is_free: true
 
-  - id: vllm-local
+  - id: lmstudio-local-2
     type: openai-compatible
-    endpoint: http://localhost:8000
-    #api_key: ${VLLM_KEY}
-    timeout_ms: 3000
+    endpoint: http://192.168.2.124:1234
+    timeout_ms: 30000
+    stream_timeout_ms: 3600000
     recovery_window: 2m
     models:
-      - id: llama3.2:latest
+      - id: qwen3-coder-next
         is_free: true
+
+#  - id: vllm-local
+#    type: openai-compatible
+#    endpoint: http://localhost:8000
+#    #api_key: ${VLLM_KEY}
+#    timeout_ms: 3000
+#    recovery_window: 2m
+#    models:
+#      - id: llama3.2:latest
+#        is_free: true
 
   # --- Paid providers (uncomment to enable) ---
   # - id: openai-1
