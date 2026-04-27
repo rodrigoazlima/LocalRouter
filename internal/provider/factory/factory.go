@@ -29,7 +29,7 @@ func New(p config.ProviderConfig) (provider.Provider, error) {
 	case "ollama":
 		return ollama.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs, p.ChatPath), nil
 	case "openai-compatible", "mistral":
-		return openaicompat.New(p.ID, p.Endpoint, p.APIKey, timeoutMs, streamTimeoutMs, p.ChatPath), nil
+		return openaicompat.New(p.ID, p.Endpoint, resolveAPIKey(p), timeoutMs, streamTimeoutMs, p.ChatPath), nil
 	case "anthropic":
 		return anthropic.New(p.ID, p.APIKey, "", timeoutMs, streamTimeoutMs), nil
 	case "google":
@@ -39,4 +39,18 @@ func New(p config.ProviderConfig) (provider.Provider, error) {
 	default:
 		return nil, fmt.Errorf("unknown provider type: %s", p.Type)
 	}
+}
+
+// resolveAPIKey returns the provider-level api_key, falling back to the first
+// model-level api_key when the provider key is absent (e.g. NVIDIA per-model keys).
+func resolveAPIKey(p config.ProviderConfig) string {
+	if p.APIKey != "" {
+		return p.APIKey
+	}
+	for _, m := range p.Models {
+		if m.APIKey != "" {
+			return m.APIKey
+		}
+	}
+	return ""
 }

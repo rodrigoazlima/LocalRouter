@@ -30,8 +30,6 @@ providers:
       - id: minimax/minimax-m2.5:free
         is_free: true
 
-  # --- Remote: free aggregators ---
-
   - id: kilo-1
     type: openai-compatible
     endpoint: https://api.kilo.ai/api/gateway
@@ -49,7 +47,6 @@ providers:
       - id: google/gemini-2.0-flash
         is_free: true
 
-  # --- Remote: high-RPM free inference ---
   - id: groq-1
     type: openai-compatible
     endpoint: https://api.groq.com/openai/v1
@@ -78,7 +75,7 @@ providers:
         temperature: 0.15
         top_p: 0.95
         max_tokens: 8192
-        seed: 42
+        seed: -1
 
   - id: github-models-1
     type: openai-compatible
@@ -86,7 +83,7 @@ providers:
     chat_path: /inference/chat/completions
     api_key: ${GITHUB_TOKEN}
     limits:
-      requests: 50
+      requests: 15
       window: 1m
     recovery_window: 15m
     models:
@@ -136,17 +133,17 @@ providers:
       - id: command-r-plus
         is_free: true
 
-  - id: zhipu-1
-    type: openai-compatible
-    endpoint: https://open.bigmodel.cn/api/paas/v4
-    api_key: ${ZHIPU_API_KEY}
-    limits:
-      requests: 20
-      window: 1m
-    recovery_window: 15m
-    models:
-      - id: glm-4-flash
-        is_free: true
+#  - id: zhipu-1
+#    type: openai-compatible
+#    endpoint: https://open.bigmodel.cn/api/paas/v4
+#    api_key: ${ZHIPU_API_KEY}
+#    limits:
+#      requests: 20
+#      window: 1m
+#    recovery_window: 15m
+#    models:
+#      - id: glm-4-flash
+#        is_free: true
 
   # --- Next avaliable route is selected based in declaration order if no "priority" set ---
   - id: ollama-local
