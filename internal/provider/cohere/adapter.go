@@ -24,7 +24,7 @@ type Adapter struct {
 
 func New(id, apiKey, endpoint string, timeoutMs, streamTimeoutMs int) *Adapter {
 	if endpoint == "" {
-		endpoint = "https://api.cohere.com"
+		endpoint = "https://api.cohere.com/v2"
 	}
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
@@ -106,7 +106,9 @@ type cohDelta struct {
 	Delta struct {
 		Message struct {
 			Content struct {
-				Delta struct{ Text string `json:"text"` } `json:"delta"`
+				Delta struct {
+					Text string `json:"text"`
+				} `json:"delta"`
 			} `json:"content"`
 		} `json:"message"`
 	} `json:"delta"`

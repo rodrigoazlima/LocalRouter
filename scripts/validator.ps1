@@ -150,8 +150,99 @@ Start-Sleep -Milliseconds 200
 Assert-NewLogContains -Pattern '→ github-models-1 model="gpt-4o' `
     -Description 'Log confirms GitHub API was called for gpt-4o'
 
-# ─── Test 4: gpt-4o streaming ────────────────────────────────────────────────
-Write-Host "`n[TEST 4] gpt-4o — streaming (should succeed)" -ForegroundColor Yellow
+# ─── Test 5: cohere-1 health check ─────────────────────────────────────────────
+Write-Host "`n[TEST 5] cohere-1 provider health" -ForegroundColor Yellow
+$cohereNode = $health.local.nodes | Where-Object { $_.id -eq 'cohere-1' }
+if ($cohereNode) {
+    if ($cohereNode.status -in 'ready', 'healthy') {
+        Write-Pass "cohere-1 provider is ready (status=$($cohereNode.status))"
+    } else {
+        Write-Fail "cohere-1 not ready (status=$($cohereNode.status))"
+    }
+} else {
+    Write-Fail "cohere-1 provider not found in health response"
+}
+
+# ─── Test 6: command-a-03-2025 non-streaming ───────────────────────────────────
+Write-Host "`n[TEST 6] command-a-03-2025 — non-streaming (should succeed)" -ForegroundColor Yellow
+$script:logBefore = if (Test-Path $LogFile) { (Get-Content $LogFile).Count } else { 0 }
+
+$result = Invoke-RouterPost -Model 'command-a-03-2025'
+
+if ($result.Ok) {
+    $answer = $result.Data.choices[0].message.content
+    $model  = $result.Data.model
+    Write-Pass "Response received: model=$model answer=`"$answer`""
+    $availableModels['cohere/command-a-03-2025'] = "OK"
+    if ($result.Data.usage.completion_tokens -gt 0) {
+        Write-Pass "Usage tokens present (prompt=$($result.Data.usage.prompt_tokens) completion=$($result.Data.usage.completion_tokens))"
+    } else {
+        Write-Fail "No usage tokens in response"
+    }
+} else {
+    $errMsg = $result.Raw?.error?.message
+    $unavailableModels['cohere/command-a-03-2025'] = "HTTP $($result.Status) - $errMsg"
+    Write-Fail "Request failed: HTTP $($result.Status)"
+    Write-Info "Error: $errMsg"
+}
+
+Start-Sleep -Milliseconds 200
+Assert-NewLogContains -Pattern '→ cohere-1 model="command-a-03-2025"' `
+    -Description 'Log confirms Cohere API was called for command-a-03-2025'
+
+# ─── Test 7: command-r7b-12-2024 streaming ─────────────────────────────────────
+Write-Host "`n[TEST 7] command-r7b-12-2024 — streaming (should succeed)" -ForegroundColor Yellow
+$script:logBefore = if (Test-Path $LogFile) { (Get-Content $LogFile).Count } else { 0 }
+
+try {
+    $streamBody = @{
+        model    = 'command-r7b-12-2024'
+        messages = @(@{ role = 'user'; content = 'Say hello.' })
+        stream   = $true
+    } | ConvertTo-Json -Compress
+
+    # curl.exe handles SSE correctly; PowerShell's web clients buffer responses
+    $tmpBody = [System.IO.Path]::GetTempFileName()
+    Set-Content -Path $tmpBody -Value $streamBody -Encoding UTF8 -NoNewline
+
+    $raw = & curl.exe -s -X POST "$RouterUrl/v1/chat/completions" `
+        -H 'Content-Type: application/json' `
+        --data-binary "@$tmpBody" `
+        --max-time 20
+    Remove-Item $tmpBody -ErrorAction SilentlyContinue
+
+    $chunks  = 0
+    $content = ''
+    foreach ($line in ($raw -split "`n")) {
+        $line = $line.Trim()
+        if ($line -match '^data: (.+)$') {
+            $data = $Matches[1]
+            if ($data -eq '[DONE]') { break }
+            try {
+                $obj   = $data | ConvertFrom-Json
+                $delta = $obj.choices[0].delta.content
+                if ($delta) { $content += $delta; $chunks++ }
+            } catch {}
+        }
+    }
+
+    if ($chunks -gt 0) {
+        Write-Pass "Received $chunks stream chunks: `"$($content.Trim())`""
+        $availableModels['cohere/command-r7b-12-2024 (streaming)'] = "OK"
+    } else {
+        Write-Fail "No stream chunks received (raw length=$($raw.Length))"
+        $unavailableModels['cohere/command-r7b-12-2024 (streaming)'] = "No response data"
+    }
+} catch {
+    Write-Fail "Streaming request failed: $_"
+}
+
+Start-Sleep -Milliseconds 200
+Assert-NewLogContains -Pattern '→ cohere-1 model="command-r7b-12-2024" stream=true' `
+    -Description 'Log confirms Cohere API called for command-r7b-12-2024 streaming'
+
+# ─── Test 8: gpt-4o streaming ────────────────────────────────────────────────
+Write-Host "`n[TEST 8] gpt-4o — streaming (should succeed)" -ForegroundColor Yellow
 $script:logBefore = if (Test-Path $LogFile) { (Get-Content $LogFile).Count } else { 0 }
 
 try {

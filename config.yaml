@@ -122,15 +122,16 @@ providers:
 
   - id: cohere-1
     type: cohere
+    endpoint: https://api.cohere.com/
     api_key: ${COHERE_API_KEY}
     limits:
       requests: 20
       window: 1m
     recovery_window: 15m
     models:
-      - id: command-r
+      - id: command-a-03-2025
         is_free: true
-      - id: command-r-plus
+      - id: command-r7b-12-2024
         is_free: true
 
 #  - id: zhipu-1

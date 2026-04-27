@@ -30,7 +30,7 @@ func TestComplete_Success(t *testing.T) {
 
 	a := cohere.New("coh-1", "test-key", srv.URL, 0, 0)
 	resp, err := a.Complete(context.Background(), &provider.Request{
-		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
+		Model: "command-a-03-2025", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -48,7 +48,7 @@ func TestComplete_429_ReturnsHTTPError(t *testing.T) {
 
 	a := cohere.New("coh-1", "key", srv.URL, 0, 0)
 	_, err := a.Complete(context.Background(), &provider.Request{
-		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
+		Model: "command-a-03-2025", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
 	var httpErr *provider.HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != 429 {
@@ -68,7 +68,7 @@ func TestStream_Success(t *testing.T) {
 
 	a := cohere.New("coh-1", "key", srv.URL, 0, 0)
 	ch, err := a.Stream(context.Background(), &provider.Request{
-		Model: "command-r", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
+		Model: "command-a-03-2025", Messages: []provider.Message{{Role: "user", Content: "Hi"}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
