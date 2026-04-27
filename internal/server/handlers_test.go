@@ -24,7 +24,7 @@ func buildHandlerTestServer(t *testing.T) *server.Server {
 	mon := health.New(m, 2000)
 	reg := registry.Build([]config.ProviderConfig{}, "")
 	st := state.New(&fakeHealthReader{})
-	return server.New(nil, mon, st, reg, m, "")
+	return server.New(nil, mon, st, reg, m, "", false)
 }
 
 func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
@@ -55,7 +55,7 @@ func TestMetricsEndpoint_ReturnsJSON(t *testing.T) {
 	mon := health.New(m, 2000)
 	reg := registry.Build([]config.ProviderConfig{}, "")
 	st := state.New(&fakeHealthReader{})
-	srv := server.New(nil, mon, st, reg, m, "")
+	srv := server.New(nil, mon, st, reg, m, "", false)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()

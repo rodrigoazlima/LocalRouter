@@ -203,6 +203,38 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 			continue
 		}
 
+		// Wait for first chunk before committing to this provider.
+		// If the stream closes empty or yields an error, try next provider.
+		first, ok := <-ch
+		if !ok {
+			log.Printf("[%s] %s empty stream, trying next", rid, p.ID())
+			r.metrics.Failures.Add(1)
+			entries = filterProvider(entries, p.ID())
+			continue
+		}
+		if first.Err != nil {
+			log.Printf("[%s] %s stream error on first chunk: %v", rid, p.ID(), first.Err)
+			r.metrics.Failures.Add(1)
+			if entry.IsRemote {
+				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+				blockDur := classifyError(first.Err, recoveryWindow)
+				r.state.Block(p.ID(), blockDur)
+				r.metrics.ProviderBlockEvents.Add(1)
+			}
+			entries = filterProvider(entries, p.ID())
+			continue
+		}
+
+		// Prepend the buffered first chunk back onto a new channel.
+		out := make(chan provider.Chunk, 1)
+		out <- first
+		go func() {
+			defer close(out)
+			for chunk := range ch {
+				out <- chunk
+			}
+		}()
+
 		r.metrics.Requests.Add(1)
 		if entry.IsRemote {
 			r.metrics.RemoteRequests.Add(1)
@@ -210,7 +242,7 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 			r.metrics.LocalRequests.Add(1)
 		}
 		log.Printf("[%s] → %s model=%q stream=true", rid, p.ID(), reqCopy.Model)
-		return reqCopy.Model, ch, nil
+		return reqCopy.Model, out, nil
 	}
 
 	r.metrics.NoCapacity.Add(1)

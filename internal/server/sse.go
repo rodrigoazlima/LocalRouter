@@ -8,10 +8,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rodrigoazlima/localrouter/internal/provider"
 	"github.com/rodrigoazlima/localrouter/internal/reqid"
 )
+
+func truncate(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:n]) + "…"
+}
 
 // incomingMessage handles both string and array content from clients like Cline.
 type incomingMessage struct {
@@ -111,6 +120,17 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[%s] IN from=%s model=%q stream=%v", id, clientIP, req.Model, req.Stream)
 
+	if s.logPrompts.Load() {
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			m := req.Messages[i]
+			if m.Role == "user" {
+				msg := m.toProviderMessage()
+				log.Printf("[%s] PROMPT %s", id, truncate(msg.Content, 300))
+				break
+			}
+		}
+	}
+
 	ctx := reqid.With(r.Context(), id)
 
 	msgs := make([]provider.Message, len(req.Messages))
@@ -136,10 +156,20 @@ func (s *Server) handleCompletions(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleComplete(w http.ResponseWriter, r *http.Request, req *provider.Request) {
+	rid := reqid.From(r.Context())
 	resp, err := s.router.Route(r.Context(), req)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":{"message":%q,"type":"router_error"}}`, err.Error()), http.StatusServiceUnavailable)
 		return
+	}
+	if s.logPrompts.Load() {
+		if resp.Content == "" {
+			log.Printf("[%s] RESPONSE (empty)", rid)
+		} else {
+			log.Printf("[%s] RESPONSE %s", rid, truncate(resp.Content, 300))
+		}
+	} else if resp.Content == "" {
+		log.Printf("[%s] RESPONSE (empty) — set logging.level: DEBUG to see content", rid)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(completionResponse{
@@ -157,6 +187,7 @@ func (s *Server) handleComplete(w http.ResponseWriter, r *http.Request, req *pro
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provider.Request) {
+	rid := reqid.From(r.Context())
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -191,6 +222,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
+	var buf strings.Builder
 	stopReason := "stop"
 	for {
 		select {
@@ -215,6 +247,12 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 				fmt.Fprintf(w, "data: %s\n\n", data)
 				fmt.Fprintf(w, "data: [DONE]\n\n")
 				flusher.Flush()
+				content := buf.String()
+				if content == "" {
+					log.Printf("[%s] RESPONSE (empty stream)", rid)
+				} else if s.logPrompts.Load() {
+					log.Printf("[%s] RESPONSE %s", rid, truncate(content, 300))
+				}
 				return
 			}
 			if chunk.Err != nil {
@@ -222,6 +260,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request, req *provi
 				flusher.Flush()
 				return
 			}
+			buf.WriteString(chunk.Delta)
 			data, _ := json.Marshal(streamEvent{
 				Object:  "chat.completion.chunk",
 				Created: created,

@@ -61,7 +61,7 @@ func main() {
 		RecoveryWindows: recWindows,
 	}
 	r := router.New(providers, reg, st, lim, m, rCfg)
-	srv := server.New(r, mon, st, reg, m, ":"+*port)
+	srv := server.New(r, mon, st, reg, m, ":"+*port, cfg.Logging.IsDebug())
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
@@ -98,6 +98,7 @@ func main() {
 			RecoveryWindows: newRecWindows,
 		}
 		r.Update(newProviders, newReg, newLim, newRCfg)
+		srv.SetDebug(newCfg.Logging.IsDebug())
 		log.Printf("[RELOAD] config reloaded")
 	})
 	if err != nil {
@@ -122,6 +123,9 @@ func main() {
 		}
 	}()
 
+	if cfg.Logging.IsDebug() {
+		log.Printf("[INIT] log level: DEBUG")
+	}
 	runStartupProbes(context.Background(), providers, mon, st, remoteSet, recWindows, 10000)
 	discoverModels(context.Background(), providers, reg, cfg.Routing.DefaultModel)
 	logAvailableProviders(cfg, st, reg)

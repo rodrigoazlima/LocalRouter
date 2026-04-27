@@ -1,4 +1,7 @@
 version: 2
+                                                                                                                                     
+logging:                                                                                                                           
+  level: DEBUG
 
 routing:
   latency_threshold_ms: 2000

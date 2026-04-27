@@ -4,6 +4,7 @@ package server
 import (
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,18 +19,20 @@ import (
 
 type Server struct {
 	*http.Server
-	router   *router.Router
-	monitor  *health.Monitor
-	state    *state.Manager
-	registry *registry.Registry
-	metrics  *metrics.Collector
+	router     *router.Router
+	monitor    *health.Monitor
+	state      *state.Manager
+	registry   *registry.Registry
+	metrics    *metrics.Collector
+	logPrompts atomic.Bool
 }
 
-func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
+func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, addr string, logPrompts bool) *Server {
 	if addr == "" {
 		addr = ":8080"
 	}
 	s := &Server{router: r, monitor: mon, state: st, registry: reg, metrics: m}
+	s.logPrompts.Store(logPrompts)
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.Recoverer)
@@ -70,6 +73,11 @@ func (sr *statusRecorder) Flush() {
 	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// SetDebug toggles debug logging at runtime (called on config reload).
+func (s *Server) SetDebug(enabled bool) {
+	s.logPrompts.Store(enabled)
 }
 
 func requestLogger(next http.Handler) http.Handler {

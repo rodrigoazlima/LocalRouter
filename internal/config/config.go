@@ -16,9 +16,20 @@ import (
 type Config struct {
 	Version   int              `yaml:"version"`
 	Routing   RoutingConfig    `yaml:"routing"`
+	Logging   LoggingConfig    `yaml:"logging"`
 	Providers []ProviderConfig `yaml:"providers"` // old schema; populated by normaliseNewSchema for new schema
 	Local     LocalConfig      `yaml:"local"`     // new schema
 	Remote    RemoteConfig     `yaml:"remote"`    // new schema
+}
+
+// LoggingConfig controls log verbosity.
+type LoggingConfig struct {
+	Level string `yaml:"level"` // DEBUG, INFO (default)
+}
+
+// IsDebug reports whether debug logging is enabled.
+func (l LoggingConfig) IsDebug() bool {
+	return strings.EqualFold(strings.TrimSpace(l.Level), "debug")
 }
 
 // RoutingConfig holds global routing parameters.
