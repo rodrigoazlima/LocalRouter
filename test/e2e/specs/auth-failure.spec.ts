@@ -1,15 +1,12 @@
 /**
  * Authentication failure handling.
  *
- * Two distinct code paths produce auth-related blocks:
+ * Two code paths produce auth-related blocks:
  *
- * 1. Startup probe path (openai-compat HealthCheck):
- *    HealthCheck returns a plain fmt.Errorf, NOT *provider.HTTPError.
- *    → startup probe always falls into the "else" branch → TierA (1 h).
+ * 1. Startup probe path: any HealthCheck failure → block for recovery_window (default 1 h).
+ * 2. Request-time path: Complete() returns 401/403 → block for recovery_window (default 1 h).
  *
- * 2. Request-time path (router.Route → Complete):
- *    Complete() returns *provider.HTTPError{StatusCode:401/403}.
- *    → router.classifyError → TierB (24 h).
+ * Both paths use the same recovery_window duration.
  */
 
 import { test, expect } from '@playwright/test';
@@ -27,7 +24,7 @@ async function teardown(c: Ctx): Promise<void> {
   if (c.cfgFile) { removeConfig(c.cfgFile); c.cfgFile = ''; }
 }
 
-test('startup probe 401 → TierA block (openai-compat HealthCheck path)', async () => {
+test('startup probe 401 → blocked for recovery_window', async () => {
   const c = ctx();
   try {
     const authFail = await startMockServer('auth-401');
@@ -47,7 +44,7 @@ test('startup probe 401 → TierA block (openai-compat HealthCheck path)', async
     const remote = findRemote(health, 'r-auth-fail');
     expect(remote).toBeDefined();
     expect(remote!.status).toBe('blocked');
-    // openaicompat.HealthCheck returns plain error → TierA = 1 h.
+    // startup probe failure → blocked for recovery_window (default 1 h).
     expect(remote!.ttl_remaining).toBeGreaterThan(3540);
     expect(remote!.ttl_remaining).toBeLessThanOrEqual(3600);
   } finally {
@@ -55,7 +52,7 @@ test('startup probe 401 → TierA block (openai-compat HealthCheck path)', async
   }
 });
 
-test('startup probe 403 → TierA block (openai-compat HealthCheck path)', async () => {
+test('startup probe 403 → blocked for recovery_window', async () => {
   const c = ctx();
   try {
     const authFail = await startMockServer('auth-403');
@@ -81,11 +78,11 @@ test('startup probe 403 → TierA block (openai-compat HealthCheck path)', async
   }
 });
 
-test('request-time 401 → TierB block (router.classifyError path)', async () => {
+test('request-time 401 → blocked for recovery_window', async () => {
   const c = ctx();
   try {
     // HealthCheck passes → not blocked at startup.
-    // Complete() returns 401 → router.classifyError → TierB (24 h).
+    // Complete() returns 401 → router.classifyError → blocked for recovery_window (default 1 h).
     const completionFail = await startMockServer('completion-401');
     c.mocks.push(completionFail);
     const routerPort = await getFreePort();
@@ -115,9 +112,9 @@ test('request-time 401 → TierB block (router.classifyError path)', async () =>
     const health = await waitForHealth(base, { remoteProviders: { 'r-completion-401': 'blocked' } });
     const remote = findRemote(health, 'r-completion-401');
     expect(remote!.status).toBe('blocked');
-    // TierB = 24 hours.
-    expect(remote!.ttl_remaining).toBeGreaterThan(86_350);
-    expect(remote!.ttl_remaining).toBeLessThanOrEqual(86_400);
+    // request-time auth failure → recovery_window (default 1 h).
+    expect(remote!.ttl_remaining).toBeGreaterThan(3540);
+    expect(remote!.ttl_remaining).toBeLessThanOrEqual(3600);
   } finally {
     await teardown(c);
   }

@@ -6,7 +6,7 @@
  * node stays StateUnavailable.
  *
  * For remote providers: no per-provider timeout_ms in config; the 10 s global
- * startup probe context cuts off long delays → TierA block.
+ * startup probe context cuts off long delays → blocked for recovery_window.
  */
 
 import { test, expect } from '@playwright/test';
@@ -88,7 +88,7 @@ test('healthy local alongside timeout node → overall status healthy', async ()
   }
 });
 
-test('remote provider that times out during startup probe is blocked TierA', async () => {
+test('remote provider that times out during startup probe is blocked for recovery_window', async () => {
   // openaicompat remote uses 30 s http.Client; startup probe wraps in 10 s context.
   // Use a 15 s mock delay so the 10 s probe context fires first.
   // NOTE: this test takes ~10 s.
@@ -114,7 +114,7 @@ test('remote provider that times out during startup probe is blocked TierA', asy
 
     const remote = findRemote(health, 'r-timeout');
     expect(remote!.status).toBe('blocked');
-    // Context cancellation → non-HTTPError → TierA.
+    // Context cancellation → blocked for recovery_window (default 1 h).
     expect(remote!.ttl_remaining).toBeGreaterThan(3500);
     expect(remote!.ttl_remaining).toBeLessThanOrEqual(3600);
   } finally {
@@ -122,7 +122,7 @@ test('remote provider that times out during startup probe is blocked TierA', asy
   }
 });
 
-test('connection refused on remote → blocked TierA immediately', async () => {
+test('connection refused on remote → blocked for recovery_window immediately', async () => {
   const c = ctx();
   try {
     const refusedPort = await getFreePort();

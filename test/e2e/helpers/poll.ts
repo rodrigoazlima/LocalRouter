@@ -23,10 +23,10 @@ export interface HealthResponse {
 }
 
 export interface MetricsSnapshot {
+  requests: number;
+  failures: number;
   local_requests: number;
   remote_requests: number;
-  tier1_failures: number;
-  tier2_failures: number;
   no_capacity: number;
   provider_block_events: number;
   streams_started: number;

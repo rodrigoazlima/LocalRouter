@@ -114,11 +114,8 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, re
 }
 
 // classifyError returns the block duration for a provider error.
-func classifyError(err error, recoveryWindow time.Duration) time.Duration {
-	var httpErr *provider.HTTPError
-	if errors.As(err, &httpErr) && (httpErr.StatusCode == 401 || httpErr.StatusCode == 403) {
-		return recoveryWindow
-	}
+// All errors use the provider's configured recovery_window (default 1 h).
+func classifyError(_ error, recoveryWindow time.Duration) time.Duration {
 	return recoveryWindow
 }
 

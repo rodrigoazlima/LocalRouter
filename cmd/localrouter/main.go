@@ -56,7 +56,7 @@ func main() {
 		remoteSet[id] = true
 	}
 
-	runStartupProbes(context.Background(), providers, mon, st, remoteSet, 10000)
+	runStartupProbes(context.Background(), providers, mon, st, remoteSet, recWindows, 10000)
 	discoverModels(context.Background(), providers, reg, cfg.Routing.DefaultModel)
 
 	rCfg := router.Config{
@@ -171,12 +171,14 @@ func buildProviders(cfg *config.Config, mon *health.Monitor) (
 
 // runStartupProbes probes all providers concurrently.
 // On success: marks the provider ready in the health monitor.
+// On failure for remote providers: blocks for the configured recovery_window.
 func runStartupProbes(
 	ctx context.Context,
 	providers map[string]provider.Provider,
 	mon *health.Monitor,
 	st *state.Manager,
 	remoteIDs map[string]bool,
+	recWindows map[string]time.Duration,
 	timeoutMs int,
 ) {
 	var wg sync.WaitGroup
@@ -189,6 +191,14 @@ func runStartupProbes(
 			start := time.Now()
 			if err := p.HealthCheck(pCtx); err != nil {
 				log.Printf("[INIT] %s: probe failed: %v", id, err)
+				if remoteIDs[id] {
+					d := recWindows[id]
+					if d <= 0 {
+						d = time.Hour
+					}
+					st.Block(id, d)
+					log.Printf("[INIT] %s: blocked for %s", id, d)
+				}
 				return
 			}
 			mon.SetReady(id)

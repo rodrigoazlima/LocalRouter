@@ -6,7 +6,7 @@
  * - Available remotes receive traffic in config order.
  * - Healthy local nodes are preferred over remotes.
  * - 503 when all providers are blocked or unavailable.
- * - Local node failures increment tier1_failures but do NOT block in cache.
+ * - Local node request-time failures increment failures but do NOT block in state.
  */
 
 import { test, expect } from '@playwright/test';
@@ -33,7 +33,7 @@ const CHAT_PAYLOAD = JSON.stringify({
 test('blocked remote (first in config) is skipped; available remote (second) handles request', async () => {
   const c = ctx();
   try {
-    const blocked = await startMockServer('server-error-500'); // HealthCheck → 500 → TierA
+    const blocked = await startMockServer('server-error-500'); // HealthCheck → 500 → blocked
     const available = await startMockServer('healthy-openai');
     c.mocks.push(blocked, available);
     const routerPort = await getFreePort();
@@ -61,7 +61,7 @@ test('blocked remote (first in config) is skipped; available remote (second) han
     const metrics = await fetchMetrics(base);
     expect(metrics.remote_requests).toBe(1);
     // r-blocked was already blocked before the request; router skips without a new failure event.
-    expect(metrics.tier2_failures).toBe(0);
+    expect(metrics.provider_block_events).toBe(0);
   } finally {
     await teardown(c);
   }
@@ -166,8 +166,8 @@ test('unavailable local → fallback to remote', async () => {
     const metrics = await fetchMetrics(base);
     expect(metrics.local_requests).toBe(0);
     expect(metrics.remote_requests).toBe(1);
-    // Node was not ready → router skipped it → no tier1_failures.
-    expect(metrics.tier1_failures).toBe(0);
+    // Node was not ready → router skipped it → no failures.
+    expect(metrics.failures).toBe(0);
   } finally {
     await teardown(c);
   }
@@ -228,12 +228,12 @@ test('local node failure during routing does not add cache block entry', async (
       remoteProviders: { 'r-ok': 'missing' },
     });
 
-    // Local returns 401 → tier1_failures++, router falls to remote → 200.
+    // Local returns 401 → failures++, router falls to remote → 200.
     const { status } = await rawPost(`${base}/v1/chat/completions`, CHAT_PAYLOAD);
     expect(status).toBe(200);
 
     const metrics = await fetchMetrics(base);
-    expect(metrics.tier1_failures).toBe(1);
+    expect(metrics.failures).toBe(1);
     expect(metrics.remote_requests).toBe(1);
     expect(metrics.provider_block_events).toBe(0); // locals never block in cache
   } finally {

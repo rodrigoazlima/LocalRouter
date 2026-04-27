@@ -5,7 +5,7 @@
  *  - healthy local nodes  → "ready"
  *  - connection-refused local nodes → "unavailable"
  *  - healthy remote providers → NOT blocked (absent from /health remote[])
- *  - failing remote providers → "blocked" (TierA, ~3600 s TTL)
+ *  - failing remote providers → "blocked" (~3600 s TTL = recovery_window default)
  *
  * Cache state reflects probe results before any LLM request is made.
  */
@@ -81,7 +81,7 @@ test('valid local nodes are marked ready after startup probe', async () => {
     // Healthy remote: Unblock() deleted cache entry → absent from remote[].
     expect(findRemote(health, 'remote-ok')).toBeUndefined();
 
-    // Failed remote: Block(TierA) → blocked with ~1 h TTL.
+    // Failed remote: startup probe failed → blocked for recovery_window (~1 h).
     const failRemote = findRemote(health, 'remote-fail-500');
     expect(failRemote).toBeDefined();
     expect(failRemote!.status).toBe('blocked');

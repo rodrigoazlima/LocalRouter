@@ -16,7 +16,7 @@ type Collector struct {
 	ProviderBlockEvents     atomic.Int64
 	ProviderExhaustedEvents atomic.Int64
 
-	// Request source tracking (new schema).
+	// Request source tracking.
 	LocalRequests  atomic.Int64
 	RemoteRequests atomic.Int64
 

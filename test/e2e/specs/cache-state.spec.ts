@@ -2,12 +2,11 @@
  * Cache state correctness.
  *
  * Verifies:
- * - TierA TTL = 3600 s (±60 s window)
- * - TierB TTL = 86400 s (±60 s window)
- * - TierA TTL < TierB TTL (explicit comparison)
+ * - startup probe failure → blocked for recovery_window (default 1 h = ~3600 s)
+ * - request-time failure → blocked for recovery_window (default 1 h = ~3600 s)
  * - provider_block_events counter increments per block
  * - no_capacity increments when all providers are blocked
- * - successful startup probe removes cache entry (Unblock → absent from remote[])
+ * - successful startup probe leaves provider absent from remote[]
  */
 
 import { test, expect } from '@playwright/test';
@@ -35,7 +34,7 @@ const CHAT = JSON.stringify({
   stream: false,
 });
 
-test('TierA block TTL is ~3600 s (startup probe failure)', async () => {
+test('startup probe failure → blocked for recovery_window (~3600 s default)', async () => {
   const c = ctx();
   try {
     const fail = await startMockServer('server-error-500');
@@ -61,7 +60,7 @@ test('TierA block TTL is ~3600 s (startup probe failure)', async () => {
   }
 });
 
-test('TierB block TTL is ~86400 s (request-time 401)', async () => {
+test('request-time 401 → blocked for recovery_window (~3600 s default)', async () => {
   const c = ctx();
   try {
     const fail = await startMockServer('completion-401');
@@ -70,31 +69,32 @@ test('TierB block TTL is ~86400 s (request-time 401)', async () => {
 
     c.cfgFile = writeConfig({
       locals: [],
-      remotes: [{ id: 'r-tierb', port: fail.port }],
+      remotes: [{ id: 'r-req-401', port: fail.port }],
       fallbackEnabled: true,
     });
 
     c.rp = await startRouter(c.cfgFile, routerPort);
     const { base } = c.rp;
 
-    await waitForHealth(base, { remoteProviders: { 'r-tierb': 'missing' } });
+    await waitForHealth(base, { remoteProviders: { 'r-req-401': 'missing' } });
     await rawPost(`${base}/v1/chat/completions`, CHAT);
 
-    const health = await waitForHealth(base, { remoteProviders: { 'r-tierb': 'blocked' } });
-    const remote = findRemote(health, 'r-tierb')!;
+    const health = await waitForHealth(base, { remoteProviders: { 'r-req-401': 'blocked' } });
+    const remote = findRemote(health, 'r-req-401')!;
     expect(remote.status).toBe('blocked');
-    expect(remote.ttl_remaining).toBeGreaterThan(86_340);
-    expect(remote.ttl_remaining).toBeLessThanOrEqual(86_400);
+    expect(remote.ttl_remaining).toBeGreaterThan(3540);
+    expect(remote.ttl_remaining).toBeLessThanOrEqual(3600);
   } finally {
     await teardown(c);
   }
 });
 
-test('TierA TTL < TierB TTL (simultaneous comparison)', async () => {
+test('startup-blocked and request-blocked providers both use recovery_window', async () => {
   const c = ctx();
   try {
-    // r-startup-fail: blocked at startup → TierA
-    // r-req-fail: HealthCheck passes, Complete → 401 → TierB
+    // r-startup-fail: blocked at startup (probe fails)
+    // r-req-fail: HealthCheck passes, Complete → 401 → blocked at request time
+    // Both use recovery_window = 1 h (default).
     const startupFail = await startMockServer('rate-limit-429');
     const reqFail = await startMockServer('completion-401');
     c.mocks.push(startupFail, reqFail);
@@ -116,19 +116,20 @@ test('TierA TTL < TierB TTL (simultaneous comparison)', async () => {
       remoteProviders: { 'r-startup-fail': 'blocked', 'r-req-fail': 'missing' },
     });
 
-    // r-startup-fail is already blocked; router tries r-req-fail → 401 → TierB.
+    // r-startup-fail is already blocked; router tries r-req-fail → 401 → blocked.
     await rawPost(`${base}/v1/chat/completions`, CHAT);
 
     const health = await waitForHealth(base, {
       remoteProviders: { 'r-startup-fail': 'blocked', 'r-req-fail': 'blocked' },
     });
 
-    const tierA = findRemote(health, 'r-startup-fail')!;
-    const tierB = findRemote(health, 'r-req-fail')!;
+    const startupBlocked = findRemote(health, 'r-startup-fail')!;
+    const reqBlocked = findRemote(health, 'r-req-fail')!;
 
-    expect(tierA.ttl_remaining!).toBeLessThan(tierB.ttl_remaining!);
-    expect(tierA.ttl_remaining!).toBeLessThanOrEqual(3600);
-    expect(tierB.ttl_remaining!).toBeGreaterThan(3600);
+    // Both use recovery_window (default 1 h); startup-blocked has less TTL remaining.
+    expect(startupBlocked.ttl_remaining!).toBeLessThanOrEqual(3600);
+    expect(reqBlocked.ttl_remaining!).toBeGreaterThan(3540);
+    expect(reqBlocked.ttl_remaining!).toBeLessThanOrEqual(3600);
   } finally {
     await teardown(c);
   }
@@ -160,13 +161,13 @@ test('provider_block_events increments for each request-time failure', async () 
       remoteProviders: { 'r-f1': 'missing', 'r-f2': 'missing', 'r-ok': 'missing' },
     });
 
-    // r-f1 → 401 → TierB, r-f2 → 429 → TierA, r-ok → 200.
+    // r-f1 → 401, r-f2 → 429, r-ok → 200.
     const { status } = await rawPost(`${base}/v1/chat/completions`, CHAT);
     expect(status).toBe(200);
 
     const metrics = await fetchMetrics(base);
     expect(metrics.provider_block_events).toBe(2);
-    expect(metrics.tier2_failures).toBe(2);
+    expect(metrics.failures).toBe(2);
     expect(metrics.remote_requests).toBe(1);
   } finally {
     await teardown(c);
@@ -233,7 +234,7 @@ test('/metrics no_capacity increments for each 503 (all blocked)', async () => {
     const metrics = await fetchMetrics(base);
     expect(metrics.no_capacity).toBe(3);
     // Provider was already blocked at startup; router skipped it without attempting → 0 failures.
-    expect(metrics.tier2_failures).toBe(0);
+    expect(metrics.failures).toBe(0);
   } finally {
     await teardown(c);
   }

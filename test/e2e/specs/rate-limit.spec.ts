@@ -1,10 +1,10 @@
 /**
  * Rate-limit (429) handling.
  *
- * Startup probe path:  any failure → TierA (1 h).
- * Request-time path:   router.classifyError(429) → explicit TierA (cache.TierA).
+ * Startup probe path:  any failure → blocked for recovery_window (default 1 h).
+ * Request-time path:   router.classifyError(429) → blocked for recovery_window (default 1 h).
  *
- * Both paths result in TierA; TTL window must be [3540, 3600].
+ * Both paths result in ~1 h block; TTL window must be [3540, 3600].
  */
 
 import { test, expect } from '@playwright/test';
@@ -22,7 +22,7 @@ async function teardown(c: Ctx): Promise<void> {
   if (c.cfgFile) { removeConfig(c.cfgFile); c.cfgFile = ''; }
 }
 
-test('startup probe 429 → TierA block with ~1 h TTL', async () => {
+test('startup probe 429 → blocked for recovery_window (~1 h)', async () => {
   const c = ctx();
   try {
     const rl = await startMockServer('rate-limit-429');
@@ -48,7 +48,7 @@ test('startup probe 429 → TierA block with ~1 h TTL', async () => {
   }
 });
 
-test('request-time 429 → TierA block and metrics increment', async () => {
+test('request-time 429 → blocked for recovery_window and metrics increment', async () => {
   const c = ctx();
   try {
     const rl = await startMockServer('completion-429');
@@ -83,7 +83,7 @@ test('request-time 429 → TierA block and metrics increment', async () => {
     expect(remote!.ttl_remaining).toBeLessThanOrEqual(3600);
 
     const metrics = await fetchMetrics(base);
-    expect(metrics.tier2_failures).toBeGreaterThanOrEqual(1);
+    expect(metrics.failures).toBeGreaterThanOrEqual(1);
     expect(metrics.provider_block_events).toBeGreaterThanOrEqual(1);
     expect(metrics.no_capacity).toBeGreaterThanOrEqual(1);
   } finally {
@@ -131,7 +131,7 @@ test('rate-limited remote is skipped on next request', async () => {
 
     const metrics = await fetchMetrics(base);
     expect(metrics.remote_requests).toBe(2);
-    expect(metrics.tier2_failures).toBe(1);    // only first request's r-rl failure
+    expect(metrics.failures).toBe(1);    // only first request's r-rl failure
     expect(metrics.provider_block_events).toBe(1);
   } finally {
     await teardown(c);
