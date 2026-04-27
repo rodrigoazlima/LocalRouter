@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # export OPENROUTER_KEY=   # OpenRouter — 500+ free :free models
 # export GROQ_KEY=         # Groq       — Llama 3.x, Kimi K2 (free tier)
-# export NVIDIA_KEY=       # NVIDIA NIM — free credits
+# export NVIDIA_API_KEY=       # NVIDIA NIM — free credits
 # export GITHUB_TOKEN=     # GitHub Models — GPT-4o, Llama (free tier)
 # export GOOGLE_API_KEY=       # Google Gemini — Flash / Flash-lite (free tier)
 # export COHERE_KEY=       # Cohere     — Command R / R+ (free tier)

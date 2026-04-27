@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 #
 # $env:OPENROUTER_KEY = ''  # OpenRouter — 500+ free :free models
 # $env:GROQ_KEY       = ''  # Groq       — Llama 3.x, Kimi K2 (free tier)
-# $env:NVIDIA_KEY     = ''  # NVIDIA NIM — free credits
+# $env:NVIDIA_API_KEY     = ''  # NVIDIA NIM — free credits
 # $env:GITHUB_TOKEN   = ''  # GitHub Models — GPT-4o, Llama (free tier)
 # $env:GOOGLE_API_KEY     = ''  # Google Gemini — Flash / Flash-lite (free tier)
 # $env:COHERE_KEY     = ''  # Cohere     — Command R / R+ (free tier)

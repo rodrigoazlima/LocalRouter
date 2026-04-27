@@ -2731,7 +2731,7 @@ providers:
   - id: nvidia-1
     type: openai-compatible
     endpoint: https://integrate.api.nvidia.com/v1
-    api_key: ${NVIDIA_KEY}
+    api_key: ${NVIDIA_API_KEY}
     limits:
       requests: 100
       window: 1m

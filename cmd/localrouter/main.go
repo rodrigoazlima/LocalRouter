@@ -147,7 +147,7 @@ func buildProviders(cfg *config.Config, mon *health.Monitor) (
 
 	for _, p := range cfg.Providers {
 		if p.Skipped {
-			log.Printf("[DEBUG] %s: skipped (api_key set but resolves empty)", p.ID)
+			log.Printf("[DEBUG] %s: skipped (api_key resolves empty)", p.ID)
 			continue
 		}
 		prov, err := factory.New(p)

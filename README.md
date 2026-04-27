@@ -181,7 +181,7 @@ Expanded in `config.yaml` using `${VAR_NAME}`. Only set variables for providers 
 |---|---|---|
 | `OPENROUTER_KEY` | OpenRouter | ✓ 500+ `:free` models |
 | `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 |
-| `NVIDIA_KEY` | NVIDIA NIM | ✓ free credits |
+| `NVIDIA_API_KEY` | NVIDIA NIM | ✓ free credits |
 | `GITHUB_TOKEN` | GitHub Models | ✓ GPT-4o, Llama |
 | `GOOGLE_API_KEY` | Google Gemini | ✓ Flash / Flash-lite |
 | `COHERE_KEY` | Cohere | ✓ Command R/R+ |

@@ -5,7 +5,7 @@ routing:
   latency_threshold_ms: 2000
 
 providers:
-  # --- Local nodes ---
+  # --- Next avaliable route is selected based in declaration order if no "priority" set ---
   - id: ollama-local
     type: ollama
     endpoint: http://localhost:11434
@@ -29,7 +29,7 @@ providers:
   - id: vllm-local
     type: openai-compatible
     endpoint: http://localhost:8000
-    api_key: ${VLLM_KEY}
+    #api_key: ${VLLM_KEY}
     timeout_ms: 3000
     recovery_window: 2m
     models:
@@ -98,7 +98,7 @@ providers:
     recovery_window: 10m
     models:
       - id: mistralai/devstral-2-123b-instruct-2512
-        api_key: ${NVIDIA_KEY}
+        api_key: ${NVIDIA_API_KEY}
         is_free: true
         temperature: 0.15
         top_p: 0.95
@@ -181,9 +181,7 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: gpt-4o-mini
-  #       is_free: false
   #     - id: gpt-4o
-  #       is_free: false
 
   # - id: anthropic-1
   #   type: anthropic
@@ -191,7 +189,6 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: claude-3-5-haiku-20241022
-  #       is_free: false
 
   # - id: deepseek-1
   #   type: openai-compatible
@@ -200,4 +197,3 @@ providers:
   #   recovery_window: 10m
   #   models:
   #     - id: deepseek-chat
-  #       is_free: false
