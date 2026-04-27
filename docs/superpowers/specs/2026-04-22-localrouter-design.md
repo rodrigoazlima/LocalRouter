@@ -459,7 +459,7 @@ remote:
       api_key: ${GOOGLE_API_KEY}
     - id: cohere-1
       type: cohere
-      api_key: ${COHERE_KEY}
+      api_key: ${COHERE_API_KEY}
 
 routing:
   latency_threshold_ms: 2000

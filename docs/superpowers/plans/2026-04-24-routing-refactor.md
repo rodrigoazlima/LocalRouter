@@ -2689,7 +2689,7 @@ providers:
   - id: openrouter-1
     type: openai-compatible
     endpoint: https://openrouter.ai/api/v1
-    api_key: ${OPENROUTER_KEY}
+    api_key: ${OPENROUTER_API_KEY}
     limits:
       requests: 200
       window: 1h
@@ -2715,7 +2715,7 @@ providers:
   - id: groq-1
     type: openai-compatible
     endpoint: https://api.groq.com/openai/v1
-    api_key: ${GROQ_KEY}
+    api_key: ${GROQ_API_KEY}
     limits:
       requests: 100
       window: 1m
@@ -2764,7 +2764,7 @@ providers:
   - id: mistral-1
     type: openai-compatible
     endpoint: https://api.mistral.ai/v1
-    api_key: ${MISTRAL_KEY}
+    api_key: ${MISTRAL_API_KEY}
     limits:
       requests: 10
       window: 1m
@@ -2794,7 +2794,7 @@ providers:
 
   - id: cohere-1
     type: cohere
-    api_key: ${COHERE_KEY}
+    api_key: ${COHERE_API_KEY}
     limits:
       requests: 20
       window: 1m
@@ -2810,7 +2810,7 @@ providers:
   - id: zhipu-1
     type: openai-compatible
     endpoint: https://open.bigmodel.cn/api/paas/v4
-    api_key: ${ZHIPU_KEY}
+    api_key: ${ZHIPU_API_KEY}
     limits:
       requests: 20
       window: 1m

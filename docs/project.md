@@ -273,7 +273,7 @@ providers:
   - id: groq-1
     type: openai-compatible
     endpoint: https://api.groq.com/openai/v1
-    api_key: ${GROQ_KEY}
+    api_key: ${GROQ_API_KEY}
     limits:
       requests: 100
       window: 1m

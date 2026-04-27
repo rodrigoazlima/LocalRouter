@@ -78,7 +78,7 @@ providers:
   - id: groq-1
     type: openai-compatible
     endpoint: https://api.groq.com/openai/v1
-    api_key: ${GROQ_KEY}
+    api_key: ${GROQ_API_KEY}
     limits:
       requests: 100
       window: 1m
@@ -91,7 +91,7 @@ providers:
 ### 3. Run
 
 ```bash
-GROQ_KEY=gsk_... ./localrouter -config config.yaml
+GROQ_API_KEY=gsk_... ./localrouter -config config.yaml
 ```
 
 ### 4. Send requests
@@ -179,14 +179,14 @@ Expanded in `config.yaml` using `${VAR_NAME}`. Only set variables for providers 
 
 | Variable | Provider | Free tier |
 |---|---|---|
-| `OPENROUTER_KEY` | OpenRouter | ✓ 500+ `:free` models |
-| `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 |
+| `OPENROUTER_API_KEY` | OpenRouter | ✓ 500+ `:free` models |
+| `GROQ_API_KEY` | Groq | ✓ Llama 3.x, Kimi K2 |
 | `NVIDIA_API_KEY` | NVIDIA NIM | ✓ free credits |
 | `GITHUB_TOKEN` | GitHub Models | ✓ GPT-4o, Llama |
 | `GOOGLE_API_KEY` | Google Gemini | ✓ Flash / Flash-lite |
-| `COHERE_KEY` | Cohere | ✓ Command R/R+ |
-| `MISTRAL_KEY` | Mistral AI | ✓ dev quota |
-| `ZHIPU_KEY` | Zhipu AI | ✓ GLM-4-Flash |
+| `COHERE_API_KEY` | Cohere | ✓ Command R/R+ |
+| `MISTRAL_API_KEY` | Mistral AI | ✓ dev quota |
+| `ZHIPU_API_KEY` | Zhipu AI | ✓ GLM-4-Flash |
 | `ANTHROPIC_KEY` | Anthropic | — paid |
 | `OPENAI_KEY` | OpenAI | — paid |
 | `VLLM_KEY` | vLLM (local, if auth enabled) | local |

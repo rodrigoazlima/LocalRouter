@@ -5,14 +5,14 @@ set -euo pipefail
 # Set only the keys for providers you want to enable.
 # Providers with an unset or empty key are silently skipped at startup.
 #
-# export OPENROUTER_KEY=   # OpenRouter — 500+ free :free models
-# export GROQ_KEY=         # Groq       — Llama 3.x, Kimi K2 (free tier)
+# export OPENROUTER_API_KEY=   # OpenRouter — 500+ free :free models
+# export GROQ_API_KEY=         # Groq       — Llama 3.x, Kimi K2 (free tier)
 # export NVIDIA_API_KEY=       # NVIDIA NIM — free credits
 # export GITHUB_TOKEN=     # GitHub Models — GPT-4o, Llama (free tier)
 # export GOOGLE_API_KEY=       # Google Gemini — Flash / Flash-lite (free tier)
-# export COHERE_KEY=       # Cohere     — Command R / R+ (free tier)
-# export MISTRAL_KEY=      # Mistral AI — dev quota (free tier)
-# export ZHIPU_KEY=        # Zhipu AI   — GLM-4-Flash (free tier)
+# export COHERE_API_KEY=       # Cohere     — Command R / R+ (free tier)
+# export MISTRAL_API_KEY=      # Mistral AI — dev quota (free tier)
+# export ZHIPU_API_KEY=        # Zhipu AI   — GLM-4-Flash (free tier)
 # export ANTHROPIC_KEY=    # Anthropic  — paid
 # export OPENAI_KEY=       # OpenAI     — paid
 # export DEEPSEEK_KEY=     # DeepSeek   — paid

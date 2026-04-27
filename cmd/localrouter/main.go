@@ -56,17 +56,12 @@ func main() {
 		remoteSet[id] = true
 	}
 
-	runStartupProbes(context.Background(), providers, mon, st, remoteSet, recWindows, 10000)
-	discoverModels(context.Background(), providers, reg, cfg.Routing.DefaultModel)
-
 	rCfg := router.Config{
 		DefaultModel:    cfg.Routing.DefaultModel,
 		RecoveryWindows: recWindows,
 	}
 	r := router.New(providers, reg, st, lim, m, rCfg)
 	srv := server.New(r, mon, st, reg, m, ":"+*port)
-
-	logAvailableProviders(cfg, st, reg)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
@@ -126,6 +121,10 @@ func main() {
 			log.Printf("server: %v", err)
 		}
 	}()
+
+	runStartupProbes(context.Background(), providers, mon, st, remoteSet, recWindows, 10000)
+	discoverModels(context.Background(), providers, reg, cfg.Routing.DefaultModel)
+	logAvailableProviders(cfg, st, reg)
 
 	<-ctx.Done()
 	log.Println("shutting down...")
