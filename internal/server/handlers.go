@@ -1,156 +1,125 @@
-// internal/server/handlers.go
+// internal/server/handlers.go - HTTP handlers for the server
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"html/template"
+	"log"
 	"net/http"
-	"time"
+	"os"
+	"path/filepath"
 
-	"github.com/rodrigoazlima/localrouter/internal/health"
 	"github.com/rodrigoazlima/localrouter/internal/state"
 )
 
-// ---- /health ----
-
-type healthResponse struct {
-	Local  localHealthInfo  `json:"local"`
-	Remote []remoteHealthInfo `json:"remote"`
+// ReadTemplate reads the HTML template from file
+func ReadTemplate() (*template.Template, error) {
+	cwd, _ := os.Getwd()
+	tmplPath := filepath.Join(cwd, "templates", "report.html")
+	return template.ParseFiles(tmplPath)
 }
 
-type localHealthInfo struct {
-	Status string           `json:"status"`
-	Nodes  []localNodeInfo  `json:"nodes"`
+type ReportData struct {
+	Global                   state.GlobalState
+	HealthyProviders         []state.ProviderState
+	DegradedBlocked          []state.ProviderState
+	UnreachableMisconfigured []state.ProviderState
+	AllProviders             []state.ProviderState
 }
 
-type localNodeInfo struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	LatencyMs int64  `json:"latency_ms"`
+type modelEntry struct {
+	ID       string `json:"id"`
+	Object   string `json:"object"`
+	Priority int    `json:"priority,omitempty"`
+	IsFree   bool   `json:"is_free,omitempty"`
+	State    string `json:"state,omitempty"`
 }
-
-type remoteHealthInfo struct {
-	ID           string `json:"id"`
-	Status       string `json:"status"`
-	TTLRemaining *int64 `json:"ttl_remaining,omitempty"`
-}
-
-func nodeStateString(s health.NodeState) string {
-	switch s {
-	case health.StateReady:
-		return "ready"
-	case health.StateDegraded:
-		return "degraded"
-	default:
-		return "unavailable"
-	}
-}
-
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	monSnap := s.monitor.Snapshot()
-
-	// Build local node info.
-	localNodes := make([]localNodeInfo, 0)
-	for _, id := range s.registry.LocalIDs() {
-		ns := monSnap[id]
-		localNodes = append(localNodes, localNodeInfo{
-			ID:        id,
-			Status:    nodeStateString(ns.State),
-			LatencyMs: ns.LatencyMs,
-		})
-	}
-
-	// Compute overall local status.
-	localStatus := "unavailable"
-	for _, n := range localNodes {
-		if n.Status == "ready" {
-			localStatus = "healthy"
-			break
-		} else if n.Status == "degraded" {
-			localStatus = "degraded"
-		}
-	}
-	if len(localNodes) == 0 {
-		localStatus = "healthy"
-	}
-
-	// Build remote provider list — only include blocked providers.
-	remoteProviders := make([]remoteHealthInfo, 0)
-	for _, id := range s.registry.RemoteIDs() {
-		st := s.state.GetState(id)
-		if st != state.StateBlocked {
-			continue
-		}
-		bu := s.state.BlockedUntil(id)
-		ttl := int64(time.Until(bu).Seconds())
-		if ttl < 0 {
-			ttl = 0
-		}
-		remoteProviders = append(remoteProviders, remoteHealthInfo{
-			ID:           id,
-			Status:       "blocked",
-			TTLRemaining: &ttl,
-		})
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(healthResponse{
-		Local:  localHealthInfo{Status: localStatus, Nodes: localNodes},
-		Remote: remoteProviders,
-	})
-}
-
-// ---- /metrics ----
-
-func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(s.metrics.Snapshot())
-}
-
-// ---- /models and /v1/models ----
 
 type modelsResponse struct {
 	Object string       `json:"object"`
 	Data   []modelEntry `json:"data"`
 }
 
-type modelEntry struct {
-	ID         string      `json:"id"`
-	Object     string      `json:"object"`
-	IsAuto     bool        `json:"is_auto,omitempty"`
-	ProviderID string      `json:"provider_id,omitempty"`
-	Priority   int         `json:"priority,omitempty"`
-	IsFree     bool        `json:"is_free,omitempty"`
-	IsDefault  bool        `json:"is_default,omitempty"`
-	State      string      `json:"state,omitempty"`
-	Limits     *limitsInfo `json:"limits,omitempty"`
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"status":"ok"}`)
 }
 
-type limitsInfo struct {
-	Requests int    `json:"requests"`
-	Window   string `json:"window"`
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s.metrics.Snapshot())
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	data := []modelEntry{
-		{ID: "auto", Object: "model", IsAuto: true},
+		{ID: "auto", Object: "model"},
 	}
-
 	for _, e := range s.registry.GlobalList() {
 		if s.state.GetState(e.ProviderID) != state.StateAvailable {
 			continue
 		}
-		entry := modelEntry{
-			ID:         e.ModelID,
-			Object:     "model",
-			ProviderID: e.ProviderID,
-			Priority:   e.Priority,
-			IsFree:     e.IsFree,
-			IsDefault:  e.IsDefault,
-			State:      "available",
-		}
-		data = append(data, entry)
+		data = append(data, modelEntry{
+			ID:       e.ModelID,
+			Object:   "model",
+			Priority: e.Priority,
+			IsFree:   e.IsFree,
+			State:    "available",
+		})
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(modelsResponse{Object: "list", Data: data})
+}
+
+// handleReport handles the /report endpoint
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	if s.reportState == nil {
+		http.Error(w, "Reporting not available", http.StatusInternalServerError)
+		return
+	}
+
+	allStates := s.reportState.GetAllProviderStates()
+
+	var healthy []state.ProviderState
+	var degradedBlocked []state.ProviderState
+	var unreachableMisconfigured []state.ProviderState
+
+	for _, p := range allStates {
+		switch p.Status {
+		case state.StatusHealthy:
+			healthy = append(healthy, p)
+		case state.StatusDegraded, state.StatusBlocked:
+			degradedBlocked = append(degradedBlocked, p)
+		default:
+			unreachableMisconfigured = append(unreachableMisconfigured, p)
+		}
+	}
+
+	data := ReportData{
+		Global:                   s.reportState.GetGlobalState(),
+		HealthyProviders:         healthy,
+		DegradedBlocked:          degradedBlocked,
+		UnreachableMisconfigured: unreachableMisconfigured,
+		AllProviders:             allStates,
+	}
+
+	tmpl, err := ReadTemplate()
+	if err != nil {
+		log.Printf("template parse error: %v", err)
+		http.Error(w, "Template error", http.StatusInternalServerError)
+		return
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		log.Printf("template execute error: %v", err)
+		http.Error(w, "Template execution error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	buf.WriteTo(w)
 }

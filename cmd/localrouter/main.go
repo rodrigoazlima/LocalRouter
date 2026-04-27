@@ -48,7 +48,10 @@ func main() {
 
 	reg := registry.Build(cfg.Providers, cfg.Routing.DefaultModel)
 	lim := limits.New(limCfgs)
-	st := state.New(mon)
+
+	// Create both managers - original for routing, new one for reporting
+	st := state.New(mon)             // Original state manager for routing
+	sr := state.NewStateManager(mon) // Extended state manager for reporting
 
 	// Build set of remote provider IDs for startup probe blocking logic.
 	remoteSet := make(map[string]bool, len(reg.RemoteIDs()))
@@ -60,8 +63,11 @@ func main() {
 		DefaultModel:    cfg.Routing.DefaultModel,
 		RecoveryWindows: recWindows,
 	}
+	// Router uses original state manager for routing decisions
 	r := router.New(providers, reg, st, lim, m, rCfg)
-	srv := server.New(r, mon, st, reg, m, ":"+*port, cfg.Logging.IsDebug())
+
+	// Server needs the new StateManager for reporting
+	srv := server.NewWithReport(r, mon, st, sr, reg, m, ":"+*port)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
@@ -98,7 +104,6 @@ func main() {
 			RecoveryWindows: newRecWindows,
 		}
 		r.Update(newProviders, newReg, newLim, newRCfg)
-		srv.SetDebug(newCfg.Logging.IsDebug())
 		log.Printf("[RELOAD] config reloaded")
 	})
 	if err != nil {
@@ -252,6 +257,15 @@ func logAvailableProviders(cfg *config.Config, st *state.Manager, reg *registry.
 	}
 	if cfg.Routing.DefaultModel != "" {
 		log.Printf("[INIT] default model: %s", cfg.Routing.DefaultModel)
+	}
+}
+
+// updateProviderState updates the report state manager with probe/request results
+func updateProviderState(sr *state.StateManager, id string, success bool, latencyMs int64, err error) {
+	if err != nil && !success {
+		sr.RecordProbeResult(id, false, latencyMs, err)
+	} else {
+		sr.RecordProbeResult(id, true, latencyMs, nil)
 	}
 }
 

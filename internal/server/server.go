@@ -19,20 +19,36 @@ import (
 
 type Server struct {
 	*http.Server
-	router     *router.Router
-	monitor    *health.Monitor
-	state      *state.Manager
-	registry   *registry.Registry
-	metrics    *metrics.Collector
-	logPrompts atomic.Bool
+	router      *router.Router
+	monitor     *health.Monitor
+	state       *state.Manager      // Original state manager for routing
+	reportState *state.StateManager // Extended state manager for reporting
+	registry    *registry.Registry
+	metrics     *metrics.Collector
+	logPrompts  atomic.Bool
 }
 
-func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, addr string, logPrompts bool) *Server {
+func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
+	return newWithReport(r, mon, st, nil, reg, m, addr)
+}
+
+// NewWithReport creates a server with extended reporting capabilities
+func NewWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
+	return newWithReport(r, mon, st, sr, reg, m, addr)
+}
+
+func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
 	if addr == "" {
 		addr = ":8080"
 	}
-	s := &Server{router: r, monitor: mon, state: st, registry: reg, metrics: m}
-	s.logPrompts.Store(logPrompts)
+	s := &Server{
+		router:      r,
+		monitor:     mon,
+		state:       st,
+		reportState: sr,
+		registry:    reg,
+		metrics:     m,
+	}
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.Recoverer)
@@ -44,6 +60,7 @@ func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry
 	mux.Get("/v1/models", s.handleModels)
 	mux.Post("/v1/chat/completions", s.handleCompletions)
 	mux.Post("/chat/completions", s.handleCompletions)
+	mux.Get("/report", s.handleReport)
 
 	// Catch-all: log any unmatched routes so we know what Cline is hitting.
 	mux.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +74,11 @@ func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry
 
 	s.Server = &http.Server{Addr: addr, Handler: mux}
 	return s
+}
+
+// SetDebug toggles debug logging at runtime (called on config reload).
+func (s *Server) SetDebug(enabled bool) {
+	s.logPrompts.Store(enabled)
 }
 
 type statusRecorder struct {
@@ -73,11 +95,6 @@ func (sr *statusRecorder) Flush() {
 	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
-}
-
-// SetDebug toggles debug logging at runtime (called on config reload).
-func (s *Server) SetDebug(enabled bool) {
-	s.logPrompts.Store(enabled)
 }
 
 func requestLogger(next http.Handler) http.Handler {
