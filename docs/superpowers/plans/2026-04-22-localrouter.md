@@ -4030,7 +4030,7 @@ remote:
       api_key: ${ANTHROPIC_KEY}
     - id: google-1
       type: google
-      api_key: ${GOOGLE_KEY}
+      api_key: ${GOOGLE_API_KEY}
     - id: cohere-1
       type: cohere
       api_key: ${COHERE_KEY}

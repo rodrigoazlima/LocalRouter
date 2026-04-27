@@ -183,7 +183,7 @@ Expanded in `config.yaml` using `${VAR_NAME}`. Only set variables for providers 
 | `GROQ_KEY` | Groq | ✓ Llama 3.x, Kimi K2 |
 | `NVIDIA_KEY` | NVIDIA NIM | ✓ free credits |
 | `GITHUB_TOKEN` | GitHub Models | ✓ GPT-4o, Llama |
-| `GOOGLE_KEY` | Google Gemini | ✓ Flash / Flash-lite |
+| `GOOGLE_API_KEY` | Google Gemini | ✓ Flash / Flash-lite |
 | `COHERE_KEY` | Cohere | ✓ Command R/R+ |
 | `MISTRAL_KEY` | Mistral AI | ✓ dev quota |
 | `ZHIPU_KEY` | Zhipu AI | ✓ GLM-4-Flash |

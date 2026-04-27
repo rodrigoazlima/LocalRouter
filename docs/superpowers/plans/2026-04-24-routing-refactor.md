@@ -2779,7 +2779,7 @@ providers:
 
   - id: google-1
     type: google
-    api_key: ${GOOGLE_KEY}
+    api_key: ${GOOGLE_API_KEY}
     limits:
       requests: 10
       window: 1m
