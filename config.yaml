@@ -64,6 +64,14 @@ providers:
         is_free: true
       - id: llama-3.3-70b-versatile
         is_free: true
+      - id: llama-4-scout-17b-16e-instruct
+        is_free: true
+      - id: llama-4-maverick-17b-128e-instruct
+        is_free: true
+      - id: deepseek-r1-distill-llama-70b
+        is_free: true
+      - id: qwen-qwq-32b
+        is_free: true
 
   - id: nvidia-1
     type: openai-compatible
@@ -91,9 +99,15 @@ providers:
       window: 1m
     recovery_window: 15m
     models:
+      - id: openai/gpt-4.1
+        is_free: true
       - id: openai/gpt-4o
         is_free: true
       - id: openai/gpt-4o-mini
+        is_free: true
+      - id: openai/o4-mini
+        is_free: true
+      - id: openai/o3-mini
         is_free: true
       - id: meta-llama/Llama-4-Maverick-17B-128E-Instruct
         is_free: true
@@ -111,6 +125,8 @@ providers:
       - id: mistral-small-latest
         is_free: true
       - id: open-mistral-nemo
+        is_free: true
+      - id: codestral-latest
         is_free: true
 
   - id: google-1
@@ -196,17 +212,67 @@ providers:
       - id: command-r7b-12-2024
         is_free: true
 
-#  - id: zhipu-1
-#    type: openai-compatible
-#    endpoint: https://open.bigmodel.cn/api/paas/v4
-#    api_key: ${ZHIPU_API_KEY}
-#    limits:
-#      requests: 20
-#      window: 1m
-#    recovery_window: 15m
-#    models:
-#      - id: glm-4-flash
-#        is_free: true
+  - id: zhipu-1
+    type: openai-compatible
+    endpoint: https://open.bigmodel.cn/api/paas/v4
+    api_key: ${ZHIPU_API_KEY}
+    limits:
+      requests: 1
+      concurrent_requests: 1
+      window: 1m
+    recovery_window: 15m
+    models:
+      - id: glm-4-flash
+        is_free: true
+      - id: glm-4.5-flash
+        is_free: true
+      - id: glm-4.7-flash
+        is_free: true
+
+  - id: cerebras-1
+    type: openai-compatible
+    endpoint: https://api.cerebras.ai/v1
+    api_key: ${CEREBRAS_API_KEY}
+    limits:
+      requests: 30
+      window: 1m
+    recovery_window: 10m
+    models:
+      - id: llama-3.3-70b
+        is_free: true
+      - id: qwen-3-235b
+        is_free: true
+
+  - id: siliconflow-1
+    type: openai-compatible
+    endpoint: https://api.siliconflow.cn/v1
+    api_key: ${SILICONFLOW_API_KEY}
+    limits:
+      requests: 1000
+      window: 1m
+    recovery_window: 10m
+    models:
+      - id: Qwen/Qwen3-8B
+        is_free: true
+      - id: deepseek-ai/DeepSeek-R1
+        is_free: true
+      - id: deepseek-ai/DeepSeek-V3
+        is_free: true
+
+  - id: llm7-1
+    type: openai-compatible
+    endpoint: https://api.llm7.io/v1
+    limits:
+      requests: 30
+      window: 1m
+    recovery_window: 10m
+    models:
+      - id: deepseek-ai/DeepSeek-R1
+        is_free: true
+      - id: deepseek-ai/DeepSeek-V3
+        is_free: true
+      - id: Qwen/QwQ-32B
+        is_free: true
 
 #  - id: ollama-local
 #    type: ollama
