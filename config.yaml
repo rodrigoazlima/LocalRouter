@@ -240,7 +240,7 @@ providers:
     models:
       - id: qwen-3-235b-a22b-instruct-2507
         is_free: true
-      - id: qwen-3-235b
+      - id: zai-glm-4.7
         is_free: true
 
   - id: siliconflow-1

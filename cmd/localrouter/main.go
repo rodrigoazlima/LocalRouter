@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rodrigoazlima/localrouter/internal/config"
+	"github.com/rodrigoazlima/localrouter/internal/discovery"
 	"github.com/rodrigoazlima/localrouter/internal/health"
 	"github.com/rodrigoazlima/localrouter/internal/limits"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
@@ -26,7 +28,28 @@ import (
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
 	port := flag.String("port", "8080", "HTTP listen port")
+	discover := flag.Bool("discover", false, "enable discovery mode: discover providers and generate config")
+	networkDiscover := flag.Bool("network-discover", false, "discover other LocalRouter instances on local network")
 	flag.Parse()
+
+	// Discovery mode - generate config and exit
+	if *discover {
+		err := runDiscovery(*cfgPath, *networkDiscover)
+		if err != nil {
+			log.Fatalf("discovery failed: %v", err)
+		}
+		log.Printf("[DISCOVER] config generated at %s", *cfgPath)
+		return
+	}
+
+	// Check if config exists, if not, run discovery automatically
+	if _, err := os.Stat(*cfgPath); os.IsNotExist(err) {
+		log.Printf("[INIT] config not found at %s, running auto-discovery...", *cfgPath)
+		if err := runDiscovery(*cfgPath, true); err != nil {
+			log.Fatalf("auto-discovery failed: %v", err)
+		}
+		log.Printf("[INIT] config generated, continuing startup...")
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -382,4 +405,38 @@ func modelConcurrencyLimits(cfg *config.Config) map[string]int {
 		}
 	}
 	return out
+}
+
+// runDiscovery performs provider discovery and generates a config file
+func runDiscovery(configPath string, networkDiscover bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Discover providers from environment variables
+	envProviders := discovery.DiscoverFromEnv()
+	log.Printf("[DISCOVER] found %d providers from environment", len(envProviders))
+
+	// Discover LocalRouter instances on network if requested
+	var networkInstances []discovery.LocalRouterInstance
+	if networkDiscover {
+		log.Printf("[DISCOVER] scanning local network for other LocalRouter instances...")
+		instances, err := discovery.DiscoverLocalRouters(ctx, 20*time.Second)
+		if err != nil {
+			log.Printf("[DISCOVER] network scan error: %v", err)
+		} else if len(instances) > 0 {
+			networkInstances = instances
+			log.Printf("[DISCOVER] found %d LocalRouter instances on network", len(instances))
+		}
+	}
+
+	// Generate config file
+	if len(networkInstances) > 0 {
+		if err := discovery.GenerateConfigFromDiscovery(envProviders, networkInstances, configPath); err != nil {
+			return fmt.Errorf("generate config: %w", err)
+		}
+	} else if err := discovery.GenerateConfigFromEnv(envProviders, configPath); err != nil {
+		return fmt.Errorf("generate config: %w", err)
+	}
+
+	return nil
 }
