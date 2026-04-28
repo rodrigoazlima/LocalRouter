@@ -125,10 +125,12 @@ Works with any OpenAI-compatible client — set `base_url` to `http://localhost:
 - **`GET /models`** and **`GET /v1/models`** — lists available (available-state only) providers and models
 - **`GET /health`** — per-provider state (`available` / `unhealthy` / `exhausted` / `blocked`) with latency
 - **`GET /metrics`** — request counts, failures, stream counts, block/exhaustion events, per-provider latency
+- **`GET /report`** — HTML report showing provider states, error types, and suggested fixes (data sourced from `.settings/`)
 - **Hot-reload** — `config.yaml` reloads on save (~100ms debounce, in-flight requests complete on old config)
 - **Provider types**: `ollama`, `openai-compatible`, `anthropic`, `google`, `cohere`, `mistral`
 - **Skipped providers** — if `api_key` is set but resolves to empty (unset env var), provider is silently skipped at startup
 - **SSE heartbeat** — 15-second ping to prevent proxy timeouts
+- **State persistence** — provider states and metrics saved to `.settings/providers/<id>.json` for state reconstruction
 - Single static binary, no external runtime dependencies
 
 ---
@@ -194,6 +196,19 @@ Expanded in `config.yaml` using `${VAR_NAME}`. Only set variables for providers 
 ---
 
 ## API
+
+### `GET /report`
+
+Returns a server-side HTML report showing provider states and error analysis. Data is reconstructed from:
+- `.settings/global.json` — global request metrics
+- `.settings/providers/<id>.json` — per-provider state including probe results, request outcomes, rate limits, and discovered models
+
+**Sections:**
+- Providers Working Successfully (healthy)
+- Providers With Issues (degraded/blocked due to rate limits or transient errors)
+- Providers Failing Health Checks (unreachable/misconfigured)
+
+Each provider card includes the error type (rate_limit, deprecated_model, timeout, invalid_endpoint) and actionable suggestions.
 
 ### `POST /v1/chat/completions`
 
