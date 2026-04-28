@@ -77,6 +77,20 @@ func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel strin
 	return router.New(ps, reg, st, lim, nil, m, cfg)
 }
 
+func buildRouterWithConcurrency(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider, concLimits map[string]int) *router.Router {
+	reg := registry.Build(providers, defaultModel)
+	h := &fakeHealth{}
+	st := state.New(h)
+	lim := limits.New(nil)
+	lim.SetConcurrencyLimits(concLimits)
+	m := metrics.New()
+	cfg := router.Config{
+		DefaultModel:    defaultModel,
+		RecoveryWindows: map[string]time.Duration{},
+	}
+	return router.New(ps, reg, st, lim, nil, m, cfg)
+}
+
 func TestRoute_ExplicitModel(t *testing.T) {
 	fp := &fakeProvider{id: "p1", endpoint: "http://localhost"}
 	providers := []config.ProviderConfig{{
@@ -208,6 +222,82 @@ func TestStream_SelectsProvider(t *testing.T) {
 	chunk := <-ch
 	if chunk.Delta != "ok" {
 		t.Errorf("want chunk delta 'ok', got %q", chunk.Delta)
+	}
+}
+
+func TestRoute_ConcurrencyExceeded_FallsBackToNextProvider(t *testing.T) {
+	fp1 := &fakeProvider{id: "p1"}
+	fp2 := &fakeProvider{id: "p2"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+		{ID: "p2", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 2}}},
+	}
+	// p1 concurrency limit = 0 (simulates all slots taken by pre-acquiring externally)
+	// We set limit=1 and pre-exhaust it.
+	lim := limits.New(nil)
+	lim.SetConcurrencyLimits(map[string]int{"p1": 1})
+	// Acquire the only slot for p1 to simulate it being full.
+	lim.TryAcquireConcurrency("p1")
+
+	reg := registry.Build(providers, "m1")
+	h := &fakeHealth{}
+	st := state.New(h)
+	m := metrics.New()
+	cfg := router.Config{DefaultModel: "m1", RecoveryWindows: map[string]time.Duration{}}
+	r := router.New(
+		map[string]provider.Provider{"p1": fp1, "p2": fp2},
+		reg, st, lim, nil, m, cfg,
+	)
+
+	resp, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
+	if err != nil {
+		t.Fatalf("want fallback to p2, got error: %v", err)
+	}
+	if resp.Model != "m1" {
+		t.Errorf("want m1, got %s", resp.Model)
+	}
+}
+
+func TestRoute_ConcurrencyNotBlocked_DoesNotMarkProviderExhausted(t *testing.T) {
+	fp := &fakeProvider{id: "p1"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+	}
+	lim := limits.New(nil)
+	lim.SetConcurrencyLimits(map[string]int{"p1": 1})
+	lim.TryAcquireConcurrency("p1") // fill slot
+
+	reg := registry.Build(providers, "m1")
+	h := &fakeHealth{}
+	st := state.New(h)
+	m := metrics.New()
+	cfg := router.Config{DefaultModel: "m1", RecoveryWindows: map[string]time.Duration{}}
+	r := router.New(map[string]provider.Provider{"p1": fp}, reg, st, lim, nil, m, cfg)
+
+	_, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
+	if err == nil {
+		t.Fatal("expected error when only provider is concurrency-full")
+	}
+	// State must still be available — concurrency breach ≠ BLOCKED/EXHAUSTED.
+	if st.GetState("p1") != state.StateAvailable {
+		t.Errorf("provider must remain available after concurrency skip, got %s", st.GetState("p1"))
+	}
+}
+
+func TestRoute_ConcurrencyReleasedAfterRequest(t *testing.T) {
+	fp := &fakeProvider{id: "p1"}
+	providers := []config.ProviderConfig{
+		{ID: "p1", Type: "ollama", Models: []config.ModelConfig{{ID: "m1", Priority: 1}}},
+	}
+	r := buildRouterWithConcurrency(providers, "m1", map[string]provider.Provider{"p1": fp}, map[string]int{"p1": 1})
+
+	// First request should succeed.
+	if _, err := r.Route(context.Background(), &provider.Request{Model: "m1"}); err != nil {
+		t.Fatalf("first request failed: %v", err)
+	}
+	// Second request should also succeed (slot was released).
+	if _, err := r.Route(context.Background(), &provider.Request{Model: "m1"}); err != nil {
+		t.Fatalf("second request failed (slot not released): %v", err)
 	}
 }
 

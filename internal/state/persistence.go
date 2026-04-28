@@ -10,6 +10,15 @@ import (
 
 const settingsDir = ".settings"
 
+// RequestRecord captures lifecycle of a single in-flight request.
+type RequestRecord struct {
+	ProviderID string     `json:"provider_id"`
+	ModelID    string     `json:"model_id"`
+	Status     string     `json:"status"` // "in_progress" | "completed"
+	StartedAt  time.Time  `json:"started_at"`
+	EndedAt    *time.Time `json:"ended_at,omitempty"`
+}
+
 // ProviderStateFile returns the path to a provider's state file
 func ProviderStateFile(id string) string {
 	return filepath.Join(settingsDir, "providers", fmt.Sprintf("%s.json", id))
@@ -28,7 +37,54 @@ func EnsureSettingsDir() error {
 	if err := os.MkdirAll(filepath.Join(settingsDir, "providers"), 0755); err != nil {
 		return fmt.Errorf("create providers dir: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Join(settingsDir, "requests"), 0755); err != nil {
+		return fmt.Errorf("create requests dir: %w", err)
+	}
 	return nil
+}
+
+// RequestRecordFile returns the path to a request's state file.
+func RequestRecordFile(id string) string {
+	return filepath.Join(settingsDir, "requests", id+".json")
+}
+
+// SaveRequestRecord writes a new in-progress request record to disk.
+func SaveRequestRecord(id, providerID, modelID string) error {
+	if err := EnsureSettingsDir(); err != nil {
+		return err
+	}
+	rec := RequestRecord{
+		ProviderID: providerID,
+		ModelID:    modelID,
+		Status:     "in_progress",
+		StartedAt:  time.Now(),
+	}
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal request record: %w", err)
+	}
+	return os.WriteFile(RequestRecordFile(id), data, 0644)
+}
+
+// CompleteRequestRecord updates an existing request record to completed status.
+func CompleteRequestRecord(id string) error {
+	path := RequestRecordFile(id)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil // file may not exist if SaveRequestRecord was skipped
+	}
+	var rec RequestRecord
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return nil
+	}
+	now := time.Now()
+	rec.Status = "completed"
+	rec.EndedAt = &now
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal request record: %w", err)
+	}
+	return os.WriteFile(path, out, 0644)
 }
 
 // SaveProviderState saves a provider's state to disk atomically
@@ -93,6 +149,16 @@ func UpdateRoutingState(id string, blockedUntil, exhaustedUntil time.Time) error
 	} else {
 		ps.ExhaustedUntil = &exhaustedUntil
 	}
+	return SaveProviderState(ps)
+}
+
+// UpdateActiveRequests persists the current in-flight request count for a provider.
+func UpdateActiveRequests(id string, active int) error {
+	ps, err := LoadProviderState(id)
+	if err != nil {
+		ps = ProviderState{Name: id}
+	}
+	ps.ActiveRequests = active
 	return SaveProviderState(ps)
 }
 

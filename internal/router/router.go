@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,6 +114,9 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, re
 		// Check per-model limits before provider-level (avoids spurious provider increments).
 		if modelLimits != nil {
 			modelKey := e.ProviderID + "/" + e.ModelID
+			if modelLimits.IsBlocked(modelKey) {
+				continue // upstream cooldown active for this model
+			}
 			if exhausted, _ := modelLimits.Record(modelKey); exhausted {
 				continue // model rate-limited; try next entry, don't block provider
 			}
@@ -145,8 +149,41 @@ func isModelLevelError(err error) bool {
 	return false
 }
 
+// acquireConcurrency attempts to acquire provider and model concurrency slots.
+// Returns (modelKey, releaseAll) where releaseAll must be called on every exit path.
+// If acquisition fails, returns ("", nil) — caller should skip and continue.
+func (r *Router) acquireConcurrency(entry registry.Entry) (modelKey string, release func()) {
+	r.mu.RLock()
+	modelLimits := r.modelLimits
+	r.mu.RUnlock()
+
+	if !r.limits.TryAcquireConcurrency(entry.ProviderID) {
+		r.metrics.RecordConcurrencyRejected(entry.ProviderID)
+		return "", nil
+	}
+	r.metrics.AddConcurrentActive(entry.ProviderID, 1)
+
+	mKey := entry.ProviderID + "/" + entry.ModelID
+	if modelLimits != nil && !modelLimits.TryAcquireConcurrency(mKey) {
+		r.limits.ReleaseConcurrency(entry.ProviderID)
+		r.metrics.AddConcurrentActive(entry.ProviderID, -1)
+		r.metrics.RecordConcurrencyRejected(entry.ProviderID)
+		return "", nil
+	}
+
+	rel := func() {
+		r.limits.ReleaseConcurrency(entry.ProviderID)
+		r.metrics.AddConcurrentActive(entry.ProviderID, -1)
+		if modelLimits != nil {
+			modelLimits.ReleaseConcurrency(mKey)
+		}
+	}
+	return mKey, rel
+}
+
 func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Response, error) {
 	rid := reqid.From(ctx)
+
 	entries := r.resolve(req.Model)
 	if len(entries) == 0 {
 		r.metrics.NoCapacity.Add(1)
@@ -160,16 +197,37 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 			return nil, ErrAllProvidersFailed
 		}
 
+		_, release := r.acquireConcurrency(entry)
+		if release == nil {
+			// concurrency full for this provider or model
+			entries = filterProvider(entries, entry.ProviderID)
+			continue
+		}
+
 		reqCopy := *req
 		reqCopy.Model = entry.ModelID
 		applyModelParams(&reqCopy, entry)
 
 		resp, err := p.Complete(ctx, &reqCopy)
+		release()
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
 			if isModelLevelError(err) {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
+				r.mu.RLock()
+				modelLimits := r.modelLimits
+				r.mu.RUnlock()
+				if modelLimits != nil {
+					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+					if recoveryWindow == 0 {
+						recoveryWindow = 60 * time.Second
+					}
+					cooldown := retryAfterDuration(err, recoveryWindow)
+					modelKey := entry.ProviderID + "/" + entry.ModelID
+					modelLimits.Block(modelKey, time.Now().Add(cooldown))
+					log.Printf("[%s] %s/%s cooling down for %s", rid, p.ID(), entry.ModelID, cooldown)
+				}
 			} else {
 				if entry.IsRemote {
 					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
@@ -199,6 +257,7 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 // Stream routes a streaming request and returns the resolved model name alongside the chunk channel.
 func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-chan provider.Chunk, error) {
 	rid := reqid.From(ctx)
+
 	entries := r.resolve(req.Model)
 	if len(entries) == 0 {
 		r.metrics.NoCapacity.Add(1)
@@ -212,16 +271,36 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 			return "", nil, ErrAllProvidersFailed
 		}
 
+		_, release := r.acquireConcurrency(entry)
+		if release == nil {
+			entries = filterProvider(entries, entry.ProviderID)
+			continue
+		}
+
 		reqCopy := *req
 		reqCopy.Model = entry.ModelID
 		applyModelParams(&reqCopy, entry)
 
 		ch, err := p.Stream(ctx, &reqCopy)
 		if err != nil {
+			release()
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
 			if isModelLevelError(err) {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
+				r.mu.RLock()
+				modelLimits := r.modelLimits
+				r.mu.RUnlock()
+				if modelLimits != nil {
+					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+					if recoveryWindow == 0 {
+						recoveryWindow = 60 * time.Second
+					}
+					cooldown := retryAfterDuration(err, recoveryWindow)
+					modelKey := entry.ProviderID + "/" + entry.ModelID
+					modelLimits.Block(modelKey, time.Now().Add(cooldown))
+					log.Printf("[%s] %s/%s cooling down for %s", rid, p.ID(), entry.ModelID, cooldown)
+				}
 			} else {
 				if entry.IsRemote {
 					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
@@ -238,12 +317,14 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		// If the stream closes empty or yields an error, try next provider.
 		first, ok := <-ch
 		if !ok {
+			release()
 			log.Printf("[%s] %s empty stream, trying next", rid, p.ID())
 			r.metrics.Failures.Add(1)
 			entries = filterProvider(entries, p.ID())
 			continue
 		}
 		if first.Err != nil {
+			release()
 			log.Printf("[%s] %s stream error on first chunk: %v", rid, p.ID(), first.Err)
 			r.metrics.Failures.Add(1)
 			if entry.IsRemote {
@@ -257,10 +338,12 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		}
 
 		// Prepend the buffered first chunk back onto a new channel.
+		// release is called by the goroutine when the upstream channel closes.
 		out := make(chan provider.Chunk, 1)
 		out <- first
 		go func() {
 			defer close(out)
+			defer release()
 			for chunk := range ch {
 				out <- chunk
 			}
@@ -298,6 +381,34 @@ func applyModelParams(req *provider.Request, e registry.Entry) {
 	if e.Seed != nil {
 		req.Seed = e.Seed
 	}
+}
+
+// retryAfterDuration parses "retry in X.Xs" from a 429 body (Google API format).
+// Falls back to fallback when not found or unparseable.
+func retryAfterDuration(err error, fallback time.Duration) time.Duration {
+	var httpErr *provider.HTTPError
+	if !errors.As(err, &httpErr) {
+		return fallback
+	}
+	const marker = "retry in "
+	idx := strings.Index(httpErr.Body, marker)
+	if idx < 0 {
+		return fallback
+	}
+	raw := httpErr.Body[idx+len(marker):]
+	end := strings.IndexAny(raw, " \n\t\"\\")
+	if end >= 0 {
+		raw = raw[:end]
+	}
+	raw = strings.TrimRight(raw, ".,;")
+	d, parseErr := time.ParseDuration(raw)
+	if parseErr != nil || d <= 0 {
+		return fallback
+	}
+	if d < time.Second {
+		d = time.Second
+	}
+	return d
 }
 
 func filterProvider(entries []registry.Entry, providerID string) []registry.Entry {

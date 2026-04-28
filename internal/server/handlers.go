@@ -4,12 +4,12 @@ package server
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/rodrigoazlima/localrouter/internal/state"
 )
@@ -42,9 +42,47 @@ type modelsResponse struct {
 	Data   []modelEntry `json:"data"`
 }
 
+type healthProviderEntry struct {
+	ID               string     `json:"id"`
+	State            string     `json:"state"`
+	LatencyMs        int64      `json:"latency_ms,omitempty"`
+	BlockedUntil     *time.Time `json:"blocked_until,omitempty"`
+	ConcurrentActive int64      `json:"concurrent_active,omitempty"`
+	ConcurrentLimit  int64      `json:"concurrent_limit,omitempty"`
+}
+
+type healthResponse struct {
+	Status    string                `json:"status"`
+	Providers []healthProviderEntry `json:"providers"`
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	snap := s.metrics.Snapshot()
+	providerIDs := s.registry.ProviderIDs()
+
+	entries := make([]healthProviderEntry, 0, len(providerIDs))
+	for _, id := range providerIDs {
+		st := s.state.GetState(id)
+		entry := healthProviderEntry{
+			ID:    id,
+			State: st.String(),
+		}
+		if ps, ok := snap.Providers[id]; ok {
+			entry.LatencyMs = ps.LatencyMs
+			entry.ConcurrentActive = ps.ConcurrentActive
+		}
+		if s.limits != nil {
+			entry.ConcurrentLimit = s.limits.ConcurrencyLimit(id)
+		}
+		if st == state.StateBlocked {
+			until := s.state.BlockedUntil(id)
+			entry.BlockedUntil = &until
+		}
+		entries = append(entries, entry)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok"}`)
+	json.NewEncoder(w).Encode(healthResponse{Status: "ok", Providers: entries})
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {

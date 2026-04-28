@@ -112,11 +112,13 @@ func (p ProviderConfig) Redacted() ProviderConfig {
 	return p
 }
 
-// LimitEntry defines a single rate-limit window (requests per duration).
+// LimitEntry defines a single rate-limit window (requests per duration)
+// and an optional concurrent request cap.
 type LimitEntry struct {
-	Requests  int    `yaml:"requests"`
-	Window    string `yaml:"window"`
-	windowDur time.Duration
+	Requests           int    `yaml:"requests"`
+	Window             string `yaml:"window"`
+	ConcurrentRequests int    `yaml:"concurrent_requests"`
+	windowDur          time.Duration
 }
 
 // WindowDur returns the parsed window duration.
@@ -420,6 +422,16 @@ func validate(cfg *Config) error {
 			}
 			if e.Window == "" {
 				return fmt.Errorf("provider %q: limits[%d].window must be set", p.ID, j)
+			}
+			if e.ConcurrentRequests < 0 {
+				return fmt.Errorf("provider %q: limits[%d].concurrent_requests must be >= 0", p.ID, j)
+			}
+		}
+		for _, m := range p.Models {
+			for j, e := range m.Limits {
+				if e.ConcurrentRequests < 0 {
+					return fmt.Errorf("provider %q model %q: limits[%d].concurrent_requests must be >= 0", p.ID, m.ID, j)
+				}
 			}
 		}
 	}

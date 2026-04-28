@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rodrigoazlima/localrouter/internal/health"
+	"github.com/rodrigoazlima/localrouter/internal/limits"
 	"github.com/rodrigoazlima/localrouter/internal/metrics"
 	"github.com/rodrigoazlima/localrouter/internal/registry"
 	"github.com/rodrigoazlima/localrouter/internal/router"
@@ -25,19 +26,20 @@ type Server struct {
 	reportState *state.StateManager // Extended state manager for reporting
 	registry    *registry.Registry
 	metrics     *metrics.Collector
+	limits      *limits.Tracker // provider-level rate/concurrency tracker
 	logPrompts  atomic.Bool
 }
 
-func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
-	return newWithReport(r, mon, st, nil, reg, m, addr)
+func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
+	return newWithReport(r, mon, st, nil, reg, m, lim, addr)
 }
 
 // NewWithReport creates a server with extended reporting capabilities
-func NewWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
-	return newWithReport(r, mon, st, sr, reg, m, addr)
+func NewWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
+	return newWithReport(r, mon, st, sr, reg, m, lim, addr)
 }
 
-func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, addr string) *Server {
+func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
 	if addr == "" {
 		addr = ":8080"
 	}
@@ -48,6 +50,7 @@ func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr 
 		reportState: sr,
 		registry:    reg,
 		metrics:     m,
+		limits:      lim,
 	}
 
 	mux := chi.NewRouter()

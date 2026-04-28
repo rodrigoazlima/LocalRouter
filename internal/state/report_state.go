@@ -122,16 +122,17 @@ type LimitWindowSave struct {
 
 // ProviderState represents the complete state of a provider for reporting
 type ProviderState struct {
-	Name          string           `json:"name"`
-	Status        ProviderStatus   `json:"status"`
-	Probe         ProbeResult      `json:"probe"`
-	Request       RequestOutcome   `json:"request"`
-	Metrics       MetricsInfo      `json:"metrics"`
-	RateLimit     RateLimitState   `json:"rate_limit"`
-	Models        ModelsInfo       `json:"models"`
+	Name           string            `json:"name"`
+	Status         ProviderStatus    `json:"status"`
+	Probe          ProbeResult       `json:"probe"`
+	Request        RequestOutcome    `json:"request"`
+	Metrics        MetricsInfo       `json:"metrics"`
+	RateLimit      RateLimitState    `json:"rate_limit"`
+	Models         ModelsInfo        `json:"models"`
 	BlockedUntil   *time.Time        `json:"blocked_until,omitempty"`
 	ExhaustedUntil *time.Time        `json:"exhausted_until,omitempty"`
 	LimitWindows   []LimitWindowSave `json:"limit_windows,omitempty"`
+	ActiveRequests int               `json:"active_requests,omitempty"`
 }
 
 // GlobalState represents the overall system state

@@ -23,38 +23,16 @@ providers:
     limits:
       requests: 200
       window: 1m
+      concurrent_requests: 10   # max 10 requests in-flight at once (0 = unlimited)
     recovery_window: 15m
     models:
-      - id: qwen/qwen3-coder:free
+      - id: openrouter/free
         is_free: true
-      - id: qwen/qwen3-next-80b-a3b-instruct:free
-        is_free: true
-      - id: meta-llama/llama-3.3-70b-instruct:free
-        is_free: true
-      - id: nousresearch/hermes-3-llama-3.1-405b:free
-        is_free: true
-      - id: nvidia/nemotron-3-super-120b-a12b:free
-        is_free: true
-      - id: openai/gpt-oss-120b:free
-        is_free: true
-      - id: openai/gpt-oss-20b:free
-        is_free: true
-      - id: google/gemma-4-31b-it:free
-        is_free: true
-      - id: google/gemma-3-27b-it:free
-        is_free: true
-      - id: nvidia/nemotron-3-nano-30b-a3b:free
-        is_free: true
-      - id: z-ai/glm-4.5-air:free
-        is_free: true
-      - id: inclusionai/ling-2.6-flash:free
-        is_free: true
-      - id: minimax/minimax-m2.5:free
-        is_free: true
-      - id: tencent/hy3-preview:free
-        is_free: true
-      - id: meta-llama/llama-3.2-3b-instruct:free
-        is_free: true
+        limits:
+          - requests: 20
+            window: 1m
+          - requests: 50
+            window: 24h
 
   - id: kilo-1
     type: openai-compatible

@@ -48,13 +48,15 @@ func main() {
 
 	reg := registry.Build(cfg.Providers, cfg.Routing.DefaultModel)
 	lim := limits.New(limCfgs)
+	lim.SetConcurrencyLimits(concurrencyLimits(cfg))
 	modelLim := limits.New(modelLimCfgs)
+	modelLim.SetConcurrencyLimits(modelConcurrencyLimits(cfg))
 
 	// Create both managers - original for routing, new one for reporting
 	st := state.New(mon)             // Original state manager for routing
 	sr := state.NewStateManager(mon) // Extended state manager for reporting
 
-	// Restore persisted routing state (blocked/exhausted/limit windows) from disk.
+	// Restore persisted routing state (blocked/exhausted/limit windows/active requests) from disk.
 	if savedStates, err := state.LoadAllProviderStates(); err == nil {
 		now := time.Now()
 		for id, ps := range savedStates {
@@ -70,6 +72,9 @@ func main() {
 					ws[i] = limits.WindowState{Count: w.Count, ResetAt: w.ResetAt}
 				}
 				lim.RestoreWindows(id, ws)
+			}
+			if ps.ActiveRequests > 0 {
+				lim.RestoreActiveRequests(id, ps.ActiveRequests)
 			}
 		}
 	}
@@ -104,7 +109,7 @@ func main() {
 	r := router.New(providers, reg, st, lim, modelLim, m, rCfg)
 
 	// Server needs the new StateManager for reporting
-	srv := server.NewWithReport(r, mon, st, sr, reg, m, ":"+*port)
+	srv := server.NewWithReport(r, mon, st, sr, reg, m, lim, ":"+*port)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newModelLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
@@ -136,7 +141,9 @@ func main() {
 
 		newReg := registry.Build(newCfg.Providers, newCfg.Routing.DefaultModel)
 		newLim := limits.New(newLimCfgs)
+		newLim.SetConcurrencyLimits(concurrencyLimits(newCfg))
 		newModelLim := limits.New(newModelLimCfgs)
+		newModelLim.SetConcurrencyLimits(modelConcurrencyLimits(newCfg))
 		newRCfg := router.Config{
 			DefaultModel:    newCfg.Routing.DefaultModel,
 			RecoveryWindows: newRecWindows,
@@ -339,4 +346,40 @@ func providerTimeoutMs(p config.ProviderConfig) int {
 		return p.TimeoutMs
 	}
 	return 30000
+}
+
+// concurrencyLimits extracts provider-level concurrent_requests from the first limit entry.
+func concurrencyLimits(cfg *config.Config) map[string]int {
+	out := make(map[string]int)
+	for _, p := range cfg.Providers {
+		if p.Skipped {
+			continue
+		}
+		for _, e := range p.Limits {
+			if e.ConcurrentRequests > 0 {
+				out[p.ID] = e.ConcurrentRequests
+				break
+			}
+		}
+	}
+	return out
+}
+
+// modelConcurrencyLimits extracts per-model concurrent_requests.
+func modelConcurrencyLimits(cfg *config.Config) map[string]int {
+	out := make(map[string]int)
+	for _, p := range cfg.Providers {
+		if p.Skipped {
+			continue
+		}
+		for _, m := range p.Models {
+			for _, e := range m.Limits {
+				if e.ConcurrentRequests > 0 {
+					out[p.ID+"/"+m.ID] = e.ConcurrentRequests
+					break
+				}
+			}
+		}
+	}
+	return out
 }

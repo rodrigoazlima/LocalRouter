@@ -107,13 +107,13 @@
         {{end}}
 
         <!-- Providers With Issues -->
-        {{if .DegradedBlockedProviders}}
+        {{if .DegradedBlocked}}
         <div class="row mb-4">
             <div class="col">
                 <h3>Providers With Issues</h3>
             </div>
         </div>
-        {{range .DegradedBlockedProviders}}
+        {{range .DegradedBlocked}}
         <div class="card mb-3 {{if eq .Status.StatusDegraded}}border-warning{{else if eq .Status.StatusBlocked}}border-danger{{end}}">
             <div class="card-header d-flex justify-content-between align-items-center {{if eq .Status.StatusDegraded}}bg-warning text-dark{{else if eq .Status.StatusBlocked}}bg-danger text-white{{end}}">
                 <strong>{{.Name}}</strong>
@@ -157,13 +157,13 @@
         {{end}}
 
         <!-- Providers Failing Health Checks -->
-        {{if .UnreachableMisconfiguredProviders}}
+        {{if .UnreachableMisconfigured}}
         <div class="row mb-4">
             <div class="col">
                 <h3>Providers Failing Health Checks</h3>
             </div>
         </div>
-        {{range .UnreachableMisconfiguredProviders}}
+        {{range .UnreachableMisconfigured}}
         <div class="card mb-3 border-danger">
             <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
                 <strong>{{.Name}}</strong>
