@@ -15,6 +15,7 @@ set -euo pipefail
 # export ZHIPU_API_KEY=        # Zhipu Z AI    — GLM-4.x-Flash (1 concurrent)
 # export CEREBRAS_API_KEY=     # Cerebras      — Llama 3.3/Qwen3, ultra-fast (30 RPM)
 # export SILICONFLOW_API_KEY=  # SiliconFlow   — Qwen3, DeepSeek-R1/V3 (1000 RPM)
+# export OLLAMA_API_KEY=        # Ollama Cloud  — 400+ models, gpt-oss:120b (session limits)
 # (llm7-1 needs no key — 30 RPM free)
 # export ANTHROPIC_KEY=        # Anthropic     — paid
 # export OPENAI_KEY=           # OpenAI        — paid
