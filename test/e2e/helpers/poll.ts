@@ -10,7 +10,7 @@ export interface NodeInfo {
 
 export interface RemoteInfo {
   id: string;
-  status: string; // "available" | "blocked"
+  status: string; // "available" | "blocked" | "exhausted" | "unhealthy"
   ttl_remaining?: number;
 }
 
@@ -36,11 +36,60 @@ export interface MetricsSnapshot {
   nodes: Record<string, { checks_ok: number; checks_fail: number; latency_ms: number }>;
 }
 
+// ── raw server shape ─────────────────────────────────────────────────────────
+
+interface RawProvider {
+  id: string;
+  state: string; // "available" | "blocked" | "exhausted" | "unhealthy"
+  latency_ms?: number;
+  blocked_until?: string;
+}
+
+interface RawHealth {
+  status: string;
+  providers: RawProvider[];
+}
+
+function mapToNodeStatus(state: string): string {
+  if (state === 'available') return 'ready';
+  if (state === 'unhealthy') return 'unavailable';
+  return 'degraded';
+}
+
+function ttlSeconds(blockedUntil: string): number {
+  return Math.max(0, Math.round((new Date(blockedUntil).getTime() - Date.now()) / 1000));
+}
+
+function transformHealth(raw: RawHealth): HealthResponse {
+  const providers = raw.providers ?? [];
+
+  // "remote" list only includes non-available providers;
+  // a provider absent from this list is considered "missing" (healthy/available).
+  const remote: RemoteInfo[] = providers
+    .filter((p) => p.state !== 'available')
+    .map((p) => ({
+      id: p.id,
+      status: p.state,
+      ttl_remaining: p.blocked_until ? ttlSeconds(p.blocked_until) : undefined,
+    }));
+
+  const nodes: NodeInfo[] = providers.map((p) => ({
+    id: p.id,
+    status: mapToNodeStatus(p.state),
+    latency_ms: p.latency_ms ?? 0,
+  }));
+
+  const anyAvailable = providers.some((p) => p.state === 'available');
+  const localStatus = anyAvailable ? 'healthy' : 'unavailable';
+
+  return { local: { status: localStatus, nodes }, remote };
+}
+
 // ── fetch helpers ────────────────────────────────────────────────────────────
 
 export async function fetchHealth(base: string): Promise<HealthResponse> {
   const { body } = await rawGet(`${base}/health`);
-  return JSON.parse(body) as HealthResponse;
+  return transformHealth(JSON.parse(body) as RawHealth);
 }
 
 export async function fetchMetrics(base: string): Promise<MetricsSnapshot> {
@@ -53,7 +102,8 @@ export async function fetchMetrics(base: string): Promise<MetricsSnapshot> {
 export interface ExpectedState {
   /** id → expected status ("ready" | "degraded" | "unavailable") */
   localNodes?: Record<string, string>;
-  /** id → expected status ("blocked" | "available" | "missing") */
+  /** id → expected status ("blocked" | "available" | "missing")
+   *  "missing" = provider is in available state (not in the blocked/failed list) */
   remoteProviders?: Record<string, string>;
   /** expected overall local status ("healthy" | "degraded" | "unavailable") */
   localStatus?: string;
@@ -106,6 +156,7 @@ function matches(health: HealthResponse, expected: ExpectedState): boolean {
   if (expected.remoteProviders) {
     for (const [id, wantStatus] of Object.entries(expected.remoteProviders)) {
       if (wantStatus === 'missing') {
+        // "missing" = provider is available (not in the remote blocked list)
         const found = health.remote.find((r) => r.id === id);
         if (found) return false;
       } else {
