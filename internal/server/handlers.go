@@ -42,13 +42,29 @@ type modelsResponse struct {
 	Data   []modelEntry `json:"data"`
 }
 
+type modelLimitWindow struct {
+	Requests int        `json:"requests"`
+	Window   string     `json:"window"`
+	Used     int        `json:"used,omitempty"`
+	ResetAt  *time.Time `json:"reset_at,omitempty"`
+}
+
+type modelHealthEntry struct {
+	ID           string              `json:"id"`
+	Priority     int                 `json:"priority,omitempty"`
+	State        string              `json:"state"`
+	BlockedUntil *time.Time          `json:"blocked_until,omitempty"`
+	Limits       []modelLimitWindow  `json:"limits,omitempty"`
+}
+
 type healthProviderEntry struct {
-	ID               string     `json:"id"`
-	State            string     `json:"state"`
-	LatencyMs        int64      `json:"latency_ms,omitempty"`
-	BlockedUntil     *time.Time `json:"blocked_until,omitempty"`
-	ConcurrentActive int64      `json:"concurrent_active,omitempty"`
-	ConcurrentLimit  int64      `json:"concurrent_limit,omitempty"`
+	ID               string             `json:"id"`
+	State            string             `json:"state"`
+	LatencyMs        int64              `json:"latency_ms,omitempty"`
+	BlockedUntil     *time.Time         `json:"blocked_until,omitempty"`
+	ConcurrentActive int64              `json:"concurrent_active,omitempty"`
+	ConcurrentLimit  int64              `json:"concurrent_limit,omitempty"`
+	Models           []modelHealthEntry `json:"models,omitempty"`
 }
 
 type healthResponse struct {
@@ -78,6 +94,51 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			until := s.state.BlockedUntil(id)
 			entry.BlockedUntil = &until
 		}
+
+		if s.modelLimits != nil {
+			models := s.registry.ForProviderID(id)
+			if len(models) > 0 {
+				modelEntries := make([]modelHealthEntry, 0, len(models))
+				for _, m := range models {
+					key := id + "/" + m.ModelID
+					mState := "available"
+					var blockedUntil *time.Time
+					if s.modelLimits.IsBlocked(key) {
+						mState = "blocked"
+						u := s.modelLimits.ModelBlockedUntil(key)
+						if !u.IsZero() {
+							blockedUntil = &u
+						}
+					}
+					cfgs, hasCfgs := s.modelLimits.ConfigsFor(key)
+					var limitWindows []modelLimitWindow
+					if hasCfgs {
+						ws := s.modelLimits.WindowStates(key)
+						for i, cfg := range cfgs {
+							lw := modelLimitWindow{
+								Requests: cfg.Requests,
+								Window:   cfg.Window.String(),
+							}
+							if i < len(ws) && !ws[i].ResetAt.IsZero() {
+								lw.Used = ws[i].Count
+								t := ws[i].ResetAt
+								lw.ResetAt = &t
+							}
+							limitWindows = append(limitWindows, lw)
+						}
+					}
+					modelEntries = append(modelEntries, modelHealthEntry{
+						ID:           m.ModelID,
+						Priority:     m.Priority,
+						State:        mState,
+						BlockedUntil: blockedUntil,
+						Limits:       limitWindows,
+					})
+				}
+				entry.Models = modelEntries
+			}
+		}
+
 		entries = append(entries, entry)
 	}
 

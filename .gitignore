@@ -9,7 +9,7 @@
 *.dylib
 
 # Project specific files
-localrouter
+"/localrouter"
 *.log
 localrouter.log
 

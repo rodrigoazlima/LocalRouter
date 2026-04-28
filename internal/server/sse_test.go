@@ -43,8 +43,8 @@ func buildTestServer(p provider.Provider) *server.Server {
 	m := metrics.New()
 	mon := health.New(m, 2000)
 	providerCfgs := []config.ProviderConfig{{
-		ID:   p.ID(),
-		Type: "openai-compatible",
+		ID:     p.ID(),
+		Type:   "openai-compatible",
 		Models: []config.ModelConfig{{ID: "test-model", Priority: 1}},
 	}}
 	reg := registry.Build(providerCfgs, "test-model")
@@ -54,7 +54,8 @@ func buildTestServer(p provider.Provider) *server.Server {
 		DefaultModel:    "test-model",
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	r := router.New(map[string]provider.Provider{p.ID(): p}, reg, st, lim, nil, m, rCfg)
+	sr := state.NewStateManager(nil)
+	r := router.New(map[string]provider.Provider{p.ID(): p}, reg, st, sr, lim, nil, m, rCfg)
 	return server.New(r, mon, st, reg, m, nil, "")
 }
 

@@ -106,10 +106,10 @@ func main() {
 		RecoveryWindows: recWindows,
 	}
 	// Router uses original state manager for routing decisions
-	r := router.New(providers, reg, st, lim, modelLim, m, rCfg)
+	r := router.New(providers, reg, st, sr, lim, modelLim, m, rCfg)
 
 	// Server needs the new StateManager for reporting
-	srv := server.NewWithReport(r, mon, st, sr, reg, m, lim, ":"+*port)
+	srv := server.NewWithReport(r, mon, st, sr, reg, m, lim, modelLim, ":"+*port)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newModelLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
@@ -148,7 +148,7 @@ func main() {
 			DefaultModel:    newCfg.Routing.DefaultModel,
 			RecoveryWindows: newRecWindows,
 		}
-		r.Update(newProviders, newReg, newLim, newModelLim, newRCfg)
+		r.Update(newProviders, newReg, sr, newLim, newModelLim, newRCfg)
 		log.Printf("[RELOAD] config reloaded")
 	})
 	if err != nil {

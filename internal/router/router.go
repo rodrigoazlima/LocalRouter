@@ -31,6 +31,7 @@ type Router struct {
 	providers   map[string]provider.Provider
 	registry    *registry.Registry
 	state       *state.Manager
+	reportState *state.StateManager // extended state manager for reporting (may be nil)
 	limits      *limits.Tracker
 	modelLimits *limits.Tracker // per-(provider,model) limits; may be nil
 	metrics     *metrics.Collector
@@ -41,6 +42,7 @@ func New(
 	providers map[string]provider.Provider,
 	reg *registry.Registry,
 	st *state.Manager,
+	reportSt *state.StateManager,
 	lim *limits.Tracker,
 	modelLim *limits.Tracker,
 	m *metrics.Collector,
@@ -50,6 +52,7 @@ func New(
 		providers:   providers,
 		registry:    reg,
 		state:       st,
+		reportState: reportSt,
 		limits:      lim,
 		modelLimits: modelLim,
 		metrics:     m,
@@ -57,11 +60,12 @@ func New(
 	}
 }
 
-func (r *Router) Update(providers map[string]provider.Provider, reg *registry.Registry, lim *limits.Tracker, modelLim *limits.Tracker, cfg Config) {
+func (r *Router) Update(providers map[string]provider.Provider, reg *registry.Registry, reportSt *state.StateManager, lim *limits.Tracker, modelLim *limits.Tracker, cfg Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.providers = providers
 	r.registry = reg
+	r.reportState = reportSt
 	r.limits = lim
 	r.modelLimits = modelLim
 	r.cfg = cfg
@@ -212,6 +216,9 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 		release()
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
+			if r.reportState != nil {
+				r.reportState.RecordRequestFailure(p.ID(), err)
+			}
 			r.metrics.Failures.Add(1)
 			if isModelLevelError(err) {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
@@ -233,6 +240,9 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
 					blockDur := classifyError(err, recoveryWindow)
 					r.state.Block(p.ID(), blockDur)
+					if r.reportState != nil {
+						r.reportState.RecordProbeResult(p.ID(), false, 0, err)
+					}
 					r.metrics.ProviderBlockEvents.Add(1)
 				}
 				entries = filterProvider(entries, p.ID())
@@ -240,6 +250,9 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 			continue
 		}
 
+		if r.reportState != nil {
+			r.reportState.RecordRequestSuccess(p.ID())
+		}
 		r.metrics.Requests.Add(1)
 		if entry.IsRemote {
 			r.metrics.RemoteRequests.Add(1)
@@ -285,6 +298,9 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		if err != nil {
 			release()
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
+			if r.reportState != nil {
+				r.reportState.RecordRequestFailure(p.ID(), err)
+			}
 			r.metrics.Failures.Add(1)
 			if isModelLevelError(err) {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
@@ -319,6 +335,9 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		if !ok {
 			release()
 			log.Printf("[%s] %s empty stream, trying next", rid, p.ID())
+			if r.reportState != nil {
+				r.reportState.RecordRequestFailure(p.ID(), errors.New("empty response"))
+			}
 			r.metrics.Failures.Add(1)
 			entries = filterProvider(entries, p.ID())
 			continue
@@ -331,6 +350,9 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
 				blockDur := classifyError(first.Err, recoveryWindow)
 				r.state.Block(p.ID(), blockDur)
+				if r.reportState != nil {
+					r.reportState.RecordProbeResult(p.ID(), false, 0, first.Err)
+				}
 				r.metrics.ProviderBlockEvents.Add(1)
 			}
 			entries = filterProvider(entries, p.ID())
@@ -349,6 +371,9 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 			}
 		}()
 
+		if r.reportState != nil {
+			r.reportState.RecordRequestSuccess(p.ID())
+		}
 		r.metrics.Requests.Add(1)
 		if entry.IsRemote {
 			r.metrics.RemoteRequests.Add(1)

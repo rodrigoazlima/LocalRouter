@@ -27,19 +27,20 @@ type Server struct {
 	registry    *registry.Registry
 	metrics     *metrics.Collector
 	limits      *limits.Tracker // provider-level rate/concurrency tracker
+	modelLimits *limits.Tracker // per-(provider,model) rate limits
 	logPrompts  atomic.Bool
 }
 
 func New(r *router.Router, mon *health.Monitor, st *state.Manager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
-	return newWithReport(r, mon, st, nil, reg, m, lim, addr)
+	return newWithReport(r, mon, st, nil, reg, m, lim, nil, addr)
 }
 
 // NewWithReport creates a server with extended reporting capabilities
-func NewWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
-	return newWithReport(r, mon, st, sr, reg, m, lim, addr)
+func NewWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, modelLim *limits.Tracker, addr string) *Server {
+	return newWithReport(r, mon, st, sr, reg, m, lim, modelLim, addr)
 }
 
-func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, addr string) *Server {
+func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr *state.StateManager, reg *registry.Registry, m *metrics.Collector, lim *limits.Tracker, modelLim *limits.Tracker, addr string) *Server {
 	if addr == "" {
 		addr = ":8080"
 	}
@@ -51,6 +52,7 @@ func newWithReport(r *router.Router, mon *health.Monitor, st *state.Manager, sr 
 		registry:    reg,
 		metrics:     m,
 		limits:      lim,
+		modelLimits: modelLim,
 	}
 
 	mux := chi.NewRouter()

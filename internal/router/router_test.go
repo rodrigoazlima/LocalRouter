@@ -21,9 +21,9 @@ type fakeProvider struct {
 	failWith error
 }
 
-func (f *fakeProvider) ID() string       { return f.id }
-func (f *fakeProvider) Type() string     { return "fake" }
-func (f *fakeProvider) Endpoint() string { return f.endpoint }
+func (f *fakeProvider) ID() string                          { return f.id }
+func (f *fakeProvider) Type() string                        { return "fake" }
+func (f *fakeProvider) Endpoint() string                    { return f.endpoint }
 func (f *fakeProvider) HealthCheck(_ context.Context) error { return nil }
 func (f *fakeProvider) Complete(_ context.Context, req *provider.Request) (*provider.Response, error) {
 	if f.failWith != nil {
@@ -62,7 +62,8 @@ func buildRouter(providers []config.ProviderConfig, defaultModel string, ps map[
 		DefaultModel:    defaultModel,
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	return router.New(ps, reg, st, lim, nil, m, cfg)
+	sr := state.NewStateManager(nil)
+	return router.New(ps, reg, st, sr, lim, nil, m, cfg)
 }
 
 func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider, h state.HealthReader) *router.Router {
@@ -70,11 +71,12 @@ func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel strin
 	st := state.New(h)
 	lim := limits.New(nil)
 	m := metrics.New()
+	sr := state.NewStateManager(h)
 	cfg := router.Config{
 		DefaultModel:    defaultModel,
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	return router.New(ps, reg, st, lim, nil, m, cfg)
+	return router.New(ps, reg, st, sr, lim, nil, m, cfg)
 }
 
 func buildRouterWithConcurrency(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider, concLimits map[string]int) *router.Router {
@@ -84,11 +86,12 @@ func buildRouterWithConcurrency(providers []config.ProviderConfig, defaultModel 
 	lim := limits.New(nil)
 	lim.SetConcurrencyLimits(concLimits)
 	m := metrics.New()
+	sr := state.NewStateManager(h)
 	cfg := router.Config{
 		DefaultModel:    defaultModel,
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	return router.New(ps, reg, st, lim, nil, m, cfg)
+	return router.New(ps, reg, st, sr, lim, nil, m, cfg)
 }
 
 func TestRoute_ExplicitModel(t *testing.T) {
@@ -244,9 +247,10 @@ func TestRoute_ConcurrencyExceeded_FallsBackToNextProvider(t *testing.T) {
 	st := state.New(h)
 	m := metrics.New()
 	cfg := router.Config{DefaultModel: "m1", RecoveryWindows: map[string]time.Duration{}}
+	sr := state.NewStateManager(h)
 	r := router.New(
 		map[string]provider.Provider{"p1": fp1, "p2": fp2},
-		reg, st, lim, nil, m, cfg,
+		reg, st, sr, lim, nil, m, cfg,
 	)
 
 	resp, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
@@ -272,7 +276,8 @@ func TestRoute_ConcurrencyNotBlocked_DoesNotMarkProviderExhausted(t *testing.T) 
 	st := state.New(h)
 	m := metrics.New()
 	cfg := router.Config{DefaultModel: "m1", RecoveryWindows: map[string]time.Duration{}}
-	r := router.New(map[string]provider.Provider{"p1": fp}, reg, st, lim, nil, m, cfg)
+	sr := state.NewStateManager(h)
+	r := router.New(map[string]provider.Provider{"p1": fp}, reg, st, sr, lim, nil, m, cfg)
 
 	_, err := r.Route(context.Background(), &provider.Request{Model: "m1"})
 	if err == nil {

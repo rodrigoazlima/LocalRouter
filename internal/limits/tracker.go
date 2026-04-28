@@ -269,6 +269,24 @@ func (t *Tracker) ConfigsFor(id string) ([]Config, bool) {
 	return cfgs, ok
 }
 
+// WindowStates returns a snapshot of all window states for id (nil if unknown).
+func (t *Tracker) WindowStates(id string) []WindowState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ws, ok := t.windows[id]
+	if !ok {
+		return nil
+	}
+	return snapshotWindows(ws)
+}
+
+// ModelBlockedUntil returns the upstream-cooldown expiry for key (zero if not blocked).
+func (t *Tracker) ModelBlockedUntil(key string) time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.blocked[key]
+}
+
 // Block marks key as blocked until until. Used to enforce upstream-reported cooldowns.
 func (t *Tracker) Block(key string, until time.Time) {
 	t.mu.Lock()

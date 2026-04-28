@@ -118,34 +118,20 @@ providers:
     api_key: ${GOOGLE_API_KEY}
     recovery_window: 15m
     models:
-      # Gemma (higher RPD → prefer for volume)
-      - id: gemma-3-4b-it
-        is_free: true
-        limits:
-          - requests: 60
-            window: 1m
-          - requests: 10000
-            window: 24h
-      - id: gemma-3-12b-it
-        is_free: true
-        limits:
-          - requests: 30
-            window: 1m
-          - requests: 5000
-            window: 24h
-      - id: gemma-3-27b-it
+      # Ordered by compute power: most capable first (lowest priority = preferred)
+      - id: gemini-2.5-flash
         is_free: true
         limits:
           - requests: 15
             window: 1m
-          - requests: 2000
+          - requests: 1500
             window: 24h
-      - id: gemma-4-26b-a4b-it
+      - id: gemini-3-flash
         is_free: true
         limits:
           - requests: 10
             window: 1m
-          - requests: 1500
+          - requests: 1000
             window: 24h
       - id: gemma-4-31b-it
         is_free: true
@@ -154,7 +140,13 @@ providers:
             window: 1m
           - requests: 1000
             window: 24h
-      # Gemini Flash Lite (highest RPM)
+      - id: gemma-4-26b-a4b-it
+        is_free: true
+        limits:
+          - requests: 10
+            window: 1m
+          - requests: 1500
+            window: 24h
       - id: gemini-2.5-flash-lite
         is_free: true
         limits:
@@ -169,20 +161,26 @@ providers:
             window: 1m
           - requests: 1500
             window: 24h
-      # Gemini Flash
-      - id: gemini-2.5-flash
+      - id: gemma-3-27b-it
         is_free: true
         limits:
           - requests: 15
             window: 1m
-          - requests: 1500
+          - requests: 2000
             window: 24h
-      - id: gemini-3-flash
+      - id: gemma-3-12b-it
         is_free: true
         limits:
-          - requests: 10
+          - requests: 30
             window: 1m
-          - requests: 1000
+          - requests: 5000
+            window: 24h
+      - id: gemma-3-4b-it
+        is_free: true
+        limits:
+          - requests: 60
+            window: 1m
+          - requests: 10000
             window: 24h
 
   - id: cohere-1
