@@ -76,6 +76,36 @@ func LoadProviderState(id string) (ProviderState, error) {
 	return state, nil
 }
 
+// UpdateRoutingState persists blocked_until and exhausted_until for a provider.
+// It merges into the existing file so report fields are preserved.
+func UpdateRoutingState(id string, blockedUntil, exhaustedUntil time.Time) error {
+	ps, err := LoadProviderState(id)
+	if err != nil {
+		ps = ProviderState{Name: id}
+	}
+	if blockedUntil.IsZero() {
+		ps.BlockedUntil = nil
+	} else {
+		ps.BlockedUntil = &blockedUntil
+	}
+	if exhaustedUntil.IsZero() {
+		ps.ExhaustedUntil = nil
+	} else {
+		ps.ExhaustedUntil = &exhaustedUntil
+	}
+	return SaveProviderState(ps)
+}
+
+// UpdateLimitWindows persists the current rate-limit window states for a provider.
+func UpdateLimitWindows(id string, windows []LimitWindowSave) error {
+	ps, err := LoadProviderState(id)
+	if err != nil {
+		ps = ProviderState{Name: id}
+	}
+	ps.LimitWindows = windows
+	return SaveProviderState(ps)
+}
+
 // SaveGlobalState saves the global state to disk atomically
 func SaveGlobalState(state GlobalState) error {
 	if err := EnsureSettingsDir(); err != nil {

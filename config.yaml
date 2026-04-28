@@ -21,13 +21,39 @@ providers:
     endpoint: https://openrouter.ai/api
     api_key: ${OPENROUTER_API_KEY}
     limits:
-      requests: 20
+      requests: 200
       window: 1m
     recovery_window: 15m
     models:
       - id: qwen/qwen3-coder:free
         is_free: true
+      - id: qwen/qwen3-next-80b-a3b-instruct:free
+        is_free: true
+      - id: meta-llama/llama-3.3-70b-instruct:free
+        is_free: true
+      - id: nousresearch/hermes-3-llama-3.1-405b:free
+        is_free: true
+      - id: nvidia/nemotron-3-super-120b-a12b:free
+        is_free: true
+      - id: openai/gpt-oss-120b:free
+        is_free: true
+      - id: openai/gpt-oss-20b:free
+        is_free: true
+      - id: google/gemma-4-31b-it:free
+        is_free: true
+      - id: google/gemma-3-27b-it:free
+        is_free: true
+      - id: nvidia/nemotron-3-nano-30b-a3b:free
+        is_free: true
+      - id: z-ai/glm-4.5-air:free
+        is_free: true
+      - id: inclusionai/ling-2.6-flash:free
+        is_free: true
       - id: minimax/minimax-m2.5:free
+        is_free: true
+      - id: tencent/hy3-preview:free
+        is_free: true
+      - id: meta-llama/llama-3.2-3b-instruct:free
         is_free: true
 
   - id: kilo-1
@@ -36,8 +62,8 @@ providers:
     chat_path: /chat/completions
     api_key: ${KILO_API_KEY}
     limits:
-      requests: 200
-      window: 1h
+      requests: 20
+      window: 24h
     recovery_window: 15m
     models:
       - id: openrouter/auto
@@ -112,13 +138,74 @@ providers:
   - id: google-1
     type: google
     api_key: ${GOOGLE_API_KEY}
-    limits:
-      requests: 1500
-      window: 24h
     recovery_window: 15m
     models:
-      - id: gemini-flash-latest
+      # Gemma (higher RPD → prefer for volume)
+      - id: gemma-3-4b-it
         is_free: true
+        limits:
+          - requests: 60
+            window: 1m
+          - requests: 10000
+            window: 24h
+      - id: gemma-3-12b-it
+        is_free: true
+        limits:
+          - requests: 30
+            window: 1m
+          - requests: 5000
+            window: 24h
+      - id: gemma-3-27b-it
+        is_free: true
+        limits:
+          - requests: 15
+            window: 1m
+          - requests: 2000
+            window: 24h
+      - id: gemma-4-26b-a4b-it
+        is_free: true
+        limits:
+          - requests: 10
+            window: 1m
+          - requests: 1500
+            window: 24h
+      - id: gemma-4-31b-it
+        is_free: true
+        limits:
+          - requests: 5
+            window: 1m
+          - requests: 1000
+            window: 24h
+      # Gemini Flash Lite (highest RPM)
+      - id: gemini-2.5-flash-lite
+        is_free: true
+        limits:
+          - requests: 30
+            window: 1m
+          - requests: 1500
+            window: 24h
+      - id: gemini-3.1-flash-lite
+        is_free: true
+        limits:
+          - requests: 15
+            window: 1m
+          - requests: 1500
+            window: 24h
+      # Gemini Flash
+      - id: gemini-2.5-flash
+        is_free: true
+        limits:
+          - requests: 15
+            window: 1m
+          - requests: 1500
+            window: 24h
+      - id: gemini-3-flash
+        is_free: true
+        limits:
+          - requests: 10
+            window: 1m
+          - requests: 1000
+            window: 24h
 
   - id: cohere-1
     type: cohere

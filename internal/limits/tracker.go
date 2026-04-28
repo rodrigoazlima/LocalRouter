@@ -5,102 +5,167 @@ import (
 	"time"
 )
 
-// Config holds rate-limit parameters for a single provider.
+// Config holds rate-limit parameters for a single window.
 type Config struct {
 	Requests int
 	Window   time.Duration
 }
 
-// window tracks the state of one fixed window for a provider.
+// WindowState captures the state of one window for persistence.
+type WindowState struct {
+	Count   int
+	ResetAt time.Time
+}
+
+// window tracks the in-memory state of one fixed window.
 type window struct {
 	count   int
 	resetAt time.Time
 }
 
 // Tracker counts requests per provider and enforces fixed-window limits.
+// Multiple windows per provider are all enforced: a request is exhausted if
+// any window is over its limit.
 // It is safe for concurrent use.
 type Tracker struct {
 	mu      sync.Mutex
-	configs map[string]Config
-	windows map[string]*window
+	configs map[string][]Config
+	windows map[string][]*window
+	onSave  func(id string, states []WindowState)
 }
 
 // New creates a Tracker with the given per-provider configs.
 // The map is copied so later mutations by the caller do not affect the tracker.
-// A nil configs is treated as an empty map (no limits for anyone).
-func New(configs map[string]Config) *Tracker {
-	cp := make(map[string]Config, len(configs))
+func New(configs map[string][]Config) *Tracker {
+	cp := make(map[string][]Config, len(configs))
 	for k, v := range configs {
-		cp[k] = v
+		cp[k] = append([]Config(nil), v...)
 	}
 	return &Tracker{
 		configs: cp,
-		windows: make(map[string]*window),
+		windows: make(map[string][]*window),
 	}
 }
 
-// Record increments the request counter for id and returns whether the limit
-// is exhausted and when the current window will reset.
+// SetSaveHook registers a callback invoked after every Record call.
+func (t *Tracker) SetSaveHook(fn func(id string, states []WindowState)) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.onSave = fn
+}
+
+// RestoreWindows restores previously persisted window states for id.
+// Entries whose ResetAt is in the past are ignored.
+// Called at startup; index i of states corresponds to config entry i.
+func (t *Tracker) RestoreWindows(id string, states []WindowState) {
+	now := time.Now()
+	cfgs, ok := t.configs[id]
+	if !ok {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	ws := t.ensureWindows(id, cfgs)
+	for i, s := range states {
+		if i >= len(ws) {
+			break
+		}
+		if now.Before(s.ResetAt) {
+			ws[i].count = s.Count
+			ws[i].resetAt = s.ResetAt
+		}
+	}
+}
+
+// Record increments the request counter for id across all configured windows
+// and returns whether any window is exhausted and the earliest reset time among
+// exhausted windows.
 //
 // If no limit is configured for id, Record always returns (false, zero).
-// The window starts on the first Record call and resets lazily when
-// time.Now() is past the window's resetAt timestamp.
 func (t *Tracker) Record(id string) (exhausted bool, resetAt time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	cfg, ok := t.configs[id]
+	cfgs, ok := t.configs[id]
 	if !ok {
-		// No limit configured — never exhausted.
 		return false, time.Time{}
 	}
 
 	now := time.Now()
+	ws := t.ensureWindows(id, cfgs)
 
-	w, exists := t.windows[id]
-	if !exists {
-		w = &window{}
-		t.windows[id] = w
+	for i, cfg := range cfgs {
+		w := ws[i]
+
+		// Lazy reset.
+		if !w.resetAt.IsZero() && now.After(w.resetAt) {
+			w.count = 0
+			w.resetAt = time.Time{}
+		}
+		if w.resetAt.IsZero() {
+			w.resetAt = now.Add(cfg.Window)
+		}
+
+		w.count++
+
+		if w.count > cfg.Requests {
+			if !exhausted || w.resetAt.Before(resetAt) {
+				resetAt = w.resetAt
+			}
+			exhausted = true
+		}
 	}
 
-	// Lazy reset: if the window has expired, start a fresh one.
-	if !w.resetAt.IsZero() && now.After(w.resetAt) {
-		w.count = 0
-		w.resetAt = time.Time{}
+	if hook := t.onSave; hook != nil {
+		states := snapshotWindows(ws)
+		go hook(id, states)
 	}
 
-	// Start window on first request (or after reset).
-	if w.resetAt.IsZero() {
-		w.resetAt = now.Add(cfg.Window)
+	if exhausted {
+		return true, resetAt
 	}
-
-	w.count++
-
-	if w.count > cfg.Requests {
-		return true, w.resetAt
-	}
-
 	return false, time.Time{}
 }
 
-// ResetAt returns when the current window expires for id.
-// Returns the zero time if no window has been started yet (no Record call
-// made) or if id has no configured limit.
+// ResetAt returns the earliest non-zero window reset time for id.
 func (t *Tracker) ResetAt(id string) time.Time {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	w, ok := t.windows[id]
+	ws, ok := t.windows[id]
 	if !ok {
 		return time.Time{}
 	}
-	return w.resetAt
+	var earliest time.Time
+	for _, w := range ws {
+		if !w.resetAt.IsZero() && (earliest.IsZero() || w.resetAt.Before(earliest)) {
+			earliest = w.resetAt
+		}
+	}
+	return earliest
 }
 
-// ConfigFor returns the Config for id and true if a limit is configured for
-// that provider. Returns the zero Config and false for unknown providers.
-func (t *Tracker) ConfigFor(id string) (Config, bool) {
-	// configs is read-only after construction, no lock needed.
-	cfg, ok := t.configs[id]
-	return cfg, ok
+// ConfigsFor returns all configs for id.
+func (t *Tracker) ConfigsFor(id string) ([]Config, bool) {
+	cfgs, ok := t.configs[id]
+	return cfgs, ok
+}
+
+// ensureWindows returns (creating if needed) the window slice for id, sized to match cfgs.
+// Must be called with t.mu held.
+func (t *Tracker) ensureWindows(id string, cfgs []Config) []*window {
+	ws := t.windows[id]
+	for len(ws) < len(cfgs) {
+		ws = append(ws, &window{})
+	}
+	t.windows[id] = ws
+	return ws
+}
+
+func snapshotWindows(ws []*window) []WindowState {
+	out := make([]WindowState, len(ws))
+	for i, w := range ws {
+		out[i] = WindowState{Count: w.count, ResetAt: w.resetAt}
+	}
+	return out
 }

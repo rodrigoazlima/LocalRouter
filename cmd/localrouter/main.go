@@ -41,17 +41,54 @@ func main() {
 	}
 	mon := health.New(m, latency)
 
-	providers, limCfgs, recWindows, err := buildProviders(cfg, mon)
+	providers, limCfgs, modelLimCfgs, recWindows, err := buildProviders(cfg, mon)
 	if err != nil {
 		log.Fatalf("build providers: %v", err)
 	}
 
 	reg := registry.Build(cfg.Providers, cfg.Routing.DefaultModel)
 	lim := limits.New(limCfgs)
+	modelLim := limits.New(modelLimCfgs)
 
 	// Create both managers - original for routing, new one for reporting
 	st := state.New(mon)             // Original state manager for routing
 	sr := state.NewStateManager(mon) // Extended state manager for reporting
+
+	// Restore persisted routing state (blocked/exhausted/limit windows) from disk.
+	if savedStates, err := state.LoadAllProviderStates(); err == nil {
+		now := time.Now()
+		for id, ps := range savedStates {
+			if ps.BlockedUntil != nil && now.Before(*ps.BlockedUntil) {
+				st.BlockUntil(id, *ps.BlockedUntil)
+			}
+			if ps.ExhaustedUntil != nil && now.Before(*ps.ExhaustedUntil) {
+				st.SetExhausted(id, *ps.ExhaustedUntil)
+			}
+			if len(ps.LimitWindows) > 0 {
+				ws := make([]limits.WindowState, len(ps.LimitWindows))
+				for i, w := range ps.LimitWindows {
+					ws[i] = limits.WindowState{Count: w.Count, ResetAt: w.ResetAt}
+				}
+				lim.RestoreWindows(id, ws)
+			}
+		}
+	}
+
+	// Persist state changes to disk so they survive restarts.
+	st.SetSaveHook(func(id string, blockedUntil, exhaustedUntil time.Time) {
+		if err := state.UpdateRoutingState(id, blockedUntil, exhaustedUntil); err != nil {
+			log.Printf("[STATE] save %s: %v", id, err)
+		}
+	})
+	lim.SetSaveHook(func(id string, ws []limits.WindowState) {
+		saves := make([]state.LimitWindowSave, len(ws))
+		for i, w := range ws {
+			saves[i] = state.LimitWindowSave{Count: w.Count, ResetAt: w.ResetAt}
+		}
+		if err := state.UpdateLimitWindows(id, saves); err != nil {
+			log.Printf("[STATE] save limit %s: %v", id, err)
+		}
+	})
 
 	// Build set of remote provider IDs for startup probe blocking logic.
 	remoteSet := make(map[string]bool, len(reg.RemoteIDs()))
@@ -64,13 +101,13 @@ func main() {
 		RecoveryWindows: recWindows,
 	}
 	// Router uses original state manager for routing decisions
-	r := router.New(providers, reg, st, lim, m, rCfg)
+	r := router.New(providers, reg, st, lim, modelLim, m, rCfg)
 
 	// Server needs the new StateManager for reporting
 	srv := server.NewWithReport(r, mon, st, sr, reg, m, ":"+*port)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
-		newProviders, newLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
+		newProviders, newLimCfgs, newModelLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
 		if err != nil {
 			log.Printf("reload: build providers: %v", err)
 			return
@@ -99,11 +136,12 @@ func main() {
 
 		newReg := registry.Build(newCfg.Providers, newCfg.Routing.DefaultModel)
 		newLim := limits.New(newLimCfgs)
+		newModelLim := limits.New(newModelLimCfgs)
 		newRCfg := router.Config{
 			DefaultModel:    newCfg.Routing.DefaultModel,
 			RecoveryWindows: newRecWindows,
 		}
-		r.Update(newProviders, newReg, newLim, newRCfg)
+		r.Update(newProviders, newReg, newLim, newModelLim, newRCfg)
 		log.Printf("[RELOAD] config reloaded")
 	})
 	if err != nil {
@@ -145,12 +183,14 @@ func main() {
 
 func buildProviders(cfg *config.Config, mon *health.Monitor) (
 	map[string]provider.Provider,
-	map[string]limits.Config,
+	map[string][]limits.Config,
+	map[string][]limits.Config,
 	map[string]time.Duration,
 	error,
 ) {
 	providers := make(map[string]provider.Provider, len(cfg.Providers))
-	limCfgs := make(map[string]limits.Config)
+	limCfgs := make(map[string][]limits.Config)
+	modelLimCfgs := make(map[string][]limits.Config)
 	recWindows := make(map[string]time.Duration)
 
 	for _, p := range cfg.Providers {
@@ -160,21 +200,38 @@ func buildProviders(cfg *config.Config, mon *health.Monitor) (
 		}
 		prov, err := factory.New(p)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		providers[p.ID] = prov
 
 		mon.AddNode(p.ID, prov, providerTimeoutMs(p), 10000)
 
-		if p.Limits != nil {
-			limCfgs[p.ID] = limits.Config{
-				Requests: p.Limits.Requests,
-				Window:   p.Limits.WindowDur(),
+		if len(p.Limits) > 0 {
+			cfgs := make([]limits.Config, len(p.Limits))
+			for i, e := range p.Limits {
+				cfgs[i] = limits.Config{
+					Requests: e.Requests,
+					Window:   e.WindowDur(),
+				}
+			}
+			limCfgs[p.ID] = cfgs
+		}
+		for _, m := range p.Models {
+			if len(m.Limits) > 0 {
+				key := p.ID + "/" + m.ID
+				cfgs := make([]limits.Config, len(m.Limits))
+				for i, e := range m.Limits {
+					cfgs[i] = limits.Config{
+						Requests: e.Requests,
+						Window:   e.WindowDur(),
+					}
+				}
+				modelLimCfgs[key] = cfgs
 			}
 		}
 		recWindows[p.ID] = p.RecoveryWindowDur()
 	}
-	return providers, limCfgs, recWindows, nil
+	return providers, limCfgs, modelLimCfgs, recWindows, nil
 }
 
 // runStartupProbes probes all providers concurrently.

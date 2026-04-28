@@ -76,8 +76,8 @@ type ProviderConfig struct {
 	TimeoutMs       int           `yaml:"timeout_ms"`
 	StreamTimeoutMs int           `yaml:"stream_timeout_ms"`
 	ChatPath        string        `yaml:"chat_path"` // overrides default /v1/chat/completions
-	RecoveryWindow  string        `yaml:"recovery_window"`
-	Limits          *LimitsConfig `yaml:"limits"`
+	RecoveryWindow  string     `yaml:"recovery_window"`
+	Limits          LimitsList `yaml:"limits"`
 	Models          []ModelConfig `yaml:"models"`
 	IsRemote        bool          `yaml:"-"` // true for remote providers (new schema)
 	// Skipped is true when api_key was present in the YAML but resolved to empty
@@ -112,28 +112,58 @@ func (p ProviderConfig) Redacted() ProviderConfig {
 	return p
 }
 
-// LimitsConfig defines rate-limit parameters for a provider.
-type LimitsConfig struct {
+// LimitEntry defines a single rate-limit window (requests per duration).
+type LimitEntry struct {
 	Requests  int    `yaml:"requests"`
 	Window    string `yaml:"window"`
 	windowDur time.Duration
 }
 
 // WindowDur returns the parsed window duration.
-func (l *LimitsConfig) WindowDur() time.Duration {
+func (l *LimitEntry) WindowDur() time.Duration {
 	return l.windowDur
 }
 
+// LimitsList is a list of rate-limit entries.
+// In YAML it accepts either a single object { requests: N, window: "Xs" }
+// or a sequence of objects for multiple windows (e.g. RPM + RPD).
+type LimitsList []LimitEntry
+
+func (l *LimitsList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.SequenceNode:
+		var entries []LimitEntry
+		if err := value.Decode(&entries); err != nil {
+			return err
+		}
+		*l = entries
+	case yaml.MappingNode:
+		var entry LimitEntry
+		if err := value.Decode(&entry); err != nil {
+			return err
+		}
+		*l = LimitsList{entry}
+	default:
+		return fmt.Errorf("limits must be a mapping or sequence")
+	}
+	return nil
+}
+
+// LimitsConfig is kept as an alias for backward-compatibility with callers
+// that still reference the old type name.
+type LimitsConfig = LimitEntry
+
 // ModelConfig describes a model offered by a provider.
 type ModelConfig struct {
-	ID          string   `yaml:"id"`
-	Priority    int      `yaml:"priority"`
-	IsFree      bool     `yaml:"is_free"`
-	APIKey      string   `yaml:"api_key,omitempty"`
-	Temperature *float64 `yaml:"temperature,omitempty"`
-	TopP        *float64 `yaml:"top_p,omitempty"`
-	MaxTokens   *int     `yaml:"max_tokens,omitempty"`
-	Seed        *int     `yaml:"seed,omitempty"`
+	ID          string     `yaml:"id"`
+	Priority    int        `yaml:"priority"`
+	IsFree      bool       `yaml:"is_free"`
+	APIKey      string     `yaml:"api_key,omitempty"`
+	Limits      LimitsList `yaml:"limits,omitempty"`
+	Temperature *float64   `yaml:"temperature,omitempty"`
+	TopP        *float64   `yaml:"top_p,omitempty"`
+	MaxTokens   *int       `yaml:"max_tokens,omitempty"`
+	Seed        *int       `yaml:"seed,omitempty"`
 }
 
 var validProviderTypes = map[string]bool{
@@ -303,13 +333,27 @@ func parseDurations(cfg *Config) error {
 			p.recoveryWindowDur = d
 		}
 
-		if p.Limits != nil {
-			if p.Limits.Window != "" {
-				d, err := time.ParseDuration(p.Limits.Window)
+		for j := range p.Limits {
+			e := &p.Limits[j]
+			if e.Window != "" {
+				d, err := time.ParseDuration(e.Window)
 				if err != nil {
-					return fmt.Errorf("provider %q: invalid limits.window %q: %w", p.ID, p.Limits.Window, err)
+					return fmt.Errorf("provider %q: invalid limits[%d].window %q: %w", p.ID, j, e.Window, err)
 				}
-				p.Limits.windowDur = d
+				e.windowDur = d
+			}
+		}
+		for k := range p.Models {
+			m := &p.Models[k]
+			for j := range m.Limits {
+				e := &m.Limits[j]
+				if e.Window != "" {
+					d, err := time.ParseDuration(e.Window)
+					if err != nil {
+						return fmt.Errorf("provider %q model %q: invalid limits[%d].window %q: %w", p.ID, m.ID, j, e.Window, err)
+					}
+					e.windowDur = d
+				}
 			}
 		}
 	}
@@ -370,12 +414,12 @@ func validate(cfg *Config) error {
 		}
 
 		// Rule 7: limits validation.
-		if p.Limits != nil {
-			if p.Limits.Requests <= 0 {
-				return fmt.Errorf("provider %q: limits.requests must be > 0", p.ID)
+		for j, e := range p.Limits {
+			if e.Requests <= 0 {
+				return fmt.Errorf("provider %q: limits[%d].requests must be > 0", p.ID, j)
 			}
-			if p.Limits.Window == "" {
-				return fmt.Errorf("provider %q: limits.window must be set when limits block is present", p.ID)
+			if e.Window == "" {
+				return fmt.Errorf("provider %q: limits[%d].window must be set", p.ID, j)
 			}
 		}
 	}

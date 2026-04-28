@@ -54,8 +54,8 @@ func buildTestServer(p provider.Provider) *server.Server {
 		DefaultModel:    "test-model",
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	r := router.New(map[string]provider.Provider{p.ID(): p}, reg, st, lim, m, rCfg)
-	return server.New(r, mon, st, reg, m, "", false)
+	r := router.New(map[string]provider.Provider{p.ID(): p}, reg, st, lim, nil, m, rCfg)
+	return server.New(r, mon, st, reg, m, "")
 }
 
 func TestCompletions_NonStream_ReturnsJSON(t *testing.T) {

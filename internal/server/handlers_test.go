@@ -24,7 +24,7 @@ func buildHandlerTestServer(t *testing.T) *server.Server {
 	mon := health.New(m, 2000)
 	reg := registry.Build([]config.ProviderConfig{}, "")
 	st := state.New(&fakeHealthReader{})
-	return server.New(nil, mon, st, reg, m, "", false)
+	return server.New(nil, mon, st, reg, m, "")
 }
 
 func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
@@ -41,11 +41,8 @@ func TestHealthEndpoint_ReturnsJSON(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if _, ok := body["local"]; !ok {
-		t.Fatal("missing 'local' key in health response")
-	}
-	if _, ok := body["remote"]; !ok {
-		t.Fatal("missing 'remote' key in health response")
+	if _, ok := body["status"]; !ok {
+		t.Fatal("missing 'status' key in health response")
 	}
 }
 
@@ -55,7 +52,7 @@ func TestMetricsEndpoint_ReturnsJSON(t *testing.T) {
 	mon := health.New(m, 2000)
 	reg := registry.Build([]config.ProviderConfig{}, "")
 	st := state.New(&fakeHealthReader{})
-	srv := server.New(nil, mon, st, reg, m, "", false)
+	srv := server.New(nil, mon, st, reg, m, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	rr := httptest.NewRecorder()

@@ -26,13 +26,14 @@ type Config struct {
 }
 
 type Router struct {
-	mu        sync.RWMutex
-	providers map[string]provider.Provider
-	registry  *registry.Registry
-	state     *state.Manager
-	limits    *limits.Tracker
-	metrics   *metrics.Collector
-	cfg       Config
+	mu          sync.RWMutex
+	providers   map[string]provider.Provider
+	registry    *registry.Registry
+	state       *state.Manager
+	limits      *limits.Tracker
+	modelLimits *limits.Tracker // per-(provider,model) limits; may be nil
+	metrics     *metrics.Collector
+	cfg         Config
 }
 
 func New(
@@ -40,25 +41,28 @@ func New(
 	reg *registry.Registry,
 	st *state.Manager,
 	lim *limits.Tracker,
+	modelLim *limits.Tracker,
 	m *metrics.Collector,
 	cfg Config,
 ) *Router {
 	return &Router{
-		providers: providers,
-		registry:  reg,
-		state:     st,
-		limits:    lim,
-		metrics:   m,
-		cfg:       cfg,
+		providers:   providers,
+		registry:    reg,
+		state:       st,
+		limits:      lim,
+		modelLimits: modelLim,
+		metrics:     m,
+		cfg:         cfg,
 	}
 }
 
-func (r *Router) Update(providers map[string]provider.Provider, reg *registry.Registry, lim *limits.Tracker, cfg Config) {
+func (r *Router) Update(providers map[string]provider.Provider, reg *registry.Registry, lim *limits.Tracker, modelLim *limits.Tracker, cfg Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.providers = providers
 	r.registry = reg
 	r.limits = lim
+	r.modelLimits = modelLim
 	r.cfg = cfg
 }
 
@@ -95,6 +99,7 @@ func (r *Router) resolve(model string) []registry.Entry {
 func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, registry.Entry, error) {
 	r.mu.RLock()
 	providers := r.providers
+	modelLimits := r.modelLimits
 	r.mu.RUnlock()
 
 	for _, e := range entries {
@@ -104,6 +109,13 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, re
 		p, ok := providers[e.ProviderID]
 		if !ok {
 			continue
+		}
+		// Check per-model limits before provider-level (avoids spurious provider increments).
+		if modelLimits != nil {
+			modelKey := e.ProviderID + "/" + e.ModelID
+			if exhausted, _ := modelLimits.Record(modelKey); exhausted {
+				continue // model rate-limited; try next entry, don't block provider
+			}
 		}
 		exhausted, resetAt := r.limits.Record(e.ProviderID)
 		if exhausted {
@@ -120,6 +132,17 @@ func (r *Router) selectProvider(entries []registry.Entry) (provider.Provider, re
 // All errors use the provider's configured recovery_window (default 1 h).
 func classifyError(_ error, recoveryWindow time.Duration) time.Duration {
 	return recoveryWindow
+}
+
+// isModelLevelError returns true for HTTP status codes that indicate a model-specific
+// failure where other models on the same provider may still succeed (e.g. upstream
+// rate-limit on one model, or request too large for a specific model).
+func isModelLevelError(err error) bool {
+	var httpErr *provider.HTTPError
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode == 429 || httpErr.StatusCode == 413
+	}
+	return false
 }
 
 func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Response, error) {
@@ -145,13 +168,17 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
-			if entry.IsRemote {
-				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
-				blockDur := classifyError(err, recoveryWindow)
-				r.state.Block(p.ID(), blockDur)
-				r.metrics.ProviderBlockEvents.Add(1)
+			if isModelLevelError(err) {
+				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
+			} else {
+				if entry.IsRemote {
+					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+					blockDur := classifyError(err, recoveryWindow)
+					r.state.Block(p.ID(), blockDur)
+					r.metrics.ProviderBlockEvents.Add(1)
+				}
+				entries = filterProvider(entries, p.ID())
 			}
-			entries = filterProvider(entries, p.ID())
 			continue
 		}
 
@@ -193,13 +220,17 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 		if err != nil {
 			log.Printf("[%s] %s failed: %v", rid, p.ID(), err)
 			r.metrics.Failures.Add(1)
-			if entry.IsRemote {
-				recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
-				blockDur := classifyError(err, recoveryWindow)
-				r.state.Block(p.ID(), blockDur)
-				r.metrics.ProviderBlockEvents.Add(1)
+			if isModelLevelError(err) {
+				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
+			} else {
+				if entry.IsRemote {
+					recoveryWindow := r.cfg.RecoveryWindows[p.ID()]
+					blockDur := classifyError(err, recoveryWindow)
+					r.state.Block(p.ID(), blockDur)
+					r.metrics.ProviderBlockEvents.Add(1)
+				}
+				entries = filterProvider(entries, p.ID())
 			}
-			entries = filterProvider(entries, p.ID())
 			continue
 		}
 
@@ -275,6 +306,17 @@ func filterProvider(entries []registry.Entry, providerID string) []registry.Entr
 		if e.ProviderID != providerID {
 			result = append(result, e)
 		}
+	}
+	return result
+}
+
+func filterEntry(entries []registry.Entry, providerID, modelID string) []registry.Entry {
+	result := make([]registry.Entry, 0, len(entries))
+	for _, e := range entries {
+		if e.ProviderID == providerID && e.ModelID == modelID {
+			continue
+		}
+		result = append(result, e)
 	}
 	return result
 }

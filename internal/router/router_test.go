@@ -62,7 +62,7 @@ func buildRouter(providers []config.ProviderConfig, defaultModel string, ps map[
 		DefaultModel:    defaultModel,
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	return router.New(ps, reg, st, lim, m, cfg)
+	return router.New(ps, reg, st, lim, nil, m, cfg)
 }
 
 func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel string, ps map[string]provider.Provider, h state.HealthReader) *router.Router {
@@ -74,7 +74,7 @@ func buildRouterWithHealth(providers []config.ProviderConfig, defaultModel strin
 		DefaultModel:    defaultModel,
 		RecoveryWindows: map[string]time.Duration{},
 	}
-	return router.New(ps, reg, st, lim, m, cfg)
+	return router.New(ps, reg, st, lim, nil, m, cfg)
 }
 
 func TestRoute_ExplicitModel(t *testing.T) {

@@ -113,15 +113,25 @@ type MetricsInfo struct {
 	ConsecutiveFailures int   `json:"consecutive_failures"`
 }
 
+// LimitWindowSave captures the state of one rate-limit window for persistence.
+type LimitWindowSave struct {
+	Count   int       `json:"count"`
+	ResetAt time.Time `json:"reset_at"`
+}
+
+
 // ProviderState represents the complete state of a provider for reporting
 type ProviderState struct {
-	Name      string         `json:"name"`
-	Status    ProviderStatus `json:"status"`
-	Probe     ProbeResult    `json:"probe"`
-	Request   RequestOutcome `json:"request"`
-	Metrics   MetricsInfo    `json:"metrics"`
-	RateLimit RateLimitState `json:"rate_limit"`
-	Models    ModelsInfo     `json:"models"`
+	Name          string           `json:"name"`
+	Status        ProviderStatus   `json:"status"`
+	Probe         ProbeResult      `json:"probe"`
+	Request       RequestOutcome   `json:"request"`
+	Metrics       MetricsInfo      `json:"metrics"`
+	RateLimit     RateLimitState   `json:"rate_limit"`
+	Models        ModelsInfo       `json:"models"`
+	BlockedUntil   *time.Time        `json:"blocked_until,omitempty"`
+	ExhaustedUntil *time.Time        `json:"exhausted_until,omitempty"`
+	LimitWindows   []LimitWindowSave `json:"limit_windows,omitempty"`
 }
 
 // GlobalState represents the overall system state

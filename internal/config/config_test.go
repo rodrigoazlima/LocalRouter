@@ -69,14 +69,14 @@ providers:
 	if p.TimeoutMs != 30000 {
 		t.Fatalf("expected timeout_ms 30000, got %d", p.TimeoutMs)
 	}
-	if p.Limits == nil {
-		t.Fatal("expected non-nil limits")
+	if len(p.Limits) == 0 {
+		t.Fatal("expected non-empty limits")
 	}
-	if p.Limits.Requests != 100 {
-		t.Fatalf("expected limits.requests 100, got %d", p.Limits.Requests)
+	if p.Limits[0].Requests != 100 {
+		t.Fatalf("expected limits.requests 100, got %d", p.Limits[0].Requests)
 	}
-	if p.Limits.Window != "1m" {
-		t.Fatalf("expected limits.window 1m, got %q", p.Limits.Window)
+	if p.Limits[0].Window != "1m" {
+		t.Fatalf("expected limits.window 1m, got %q", p.Limits[0].Window)
 	}
 	if len(p.Models) != 1 {
 		t.Fatalf("expected 1 model, got %d", len(p.Models))
@@ -243,11 +243,11 @@ providers:
 		t.Fatalf("unexpected error: %v", err)
 	}
 	p := cfg.Providers[0]
-	if p.Limits == nil {
-		t.Fatal("expected non-nil limits")
+	if len(p.Limits) == 0 {
+		t.Fatal("expected non-empty limits")
 	}
-	if p.Limits.WindowDur() != time.Minute {
-		t.Fatalf("expected WindowDur() == time.Minute, got %v", p.Limits.WindowDur())
+	if p.Limits[0].WindowDur() != time.Minute {
+		t.Fatalf("expected WindowDur() == time.Minute, got %v", p.Limits[0].WindowDur())
 	}
 }
 

@@ -38,6 +38,7 @@ type Manager struct {
 	blocked   map[string]time.Time // provider id → blocked until
 	exhausted map[string]time.Time // provider id → exhausted until
 	health    HealthReader
+	onSave    func(id string, blockedUntil, exhaustedUntil time.Time)
 }
 
 func New(h HealthReader) *Manager {
@@ -46,6 +47,13 @@ func New(h HealthReader) *Manager {
 		exhausted: make(map[string]time.Time),
 		health:    h,
 	}
+}
+
+// SetSaveHook registers a callback invoked whenever blocked/exhausted state changes.
+func (m *Manager) SetSaveHook(fn func(id string, blockedUntil, exhaustedUntil time.Time)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onSave = fn
 }
 
 func (m *Manager) GetState(id string) State {
@@ -70,14 +78,32 @@ func (m *Manager) GetState(id string) State {
 
 func (m *Manager) Block(id string, d time.Duration) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.blocked[id] = time.Now().Add(d)
+	until := time.Now().Add(d)
+	m.blocked[id] = until
+	hook := m.onSave
+	eu := m.exhausted[id]
+	m.mu.Unlock()
+	if hook != nil {
+		go hook(id, until, eu)
+	}
+}
+
+// BlockUntil sets the block expiry to an absolute time (used to restore persisted state).
+func (m *Manager) BlockUntil(id string, until time.Time) {
+	m.mu.Lock()
+	m.blocked[id] = until
+	m.mu.Unlock()
 }
 
 func (m *Manager) SetExhausted(id string, resetAt time.Time) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.exhausted[id] = resetAt
+	hook := m.onSave
+	bu := m.blocked[id]
+	m.mu.Unlock()
+	if hook != nil {
+		go hook(id, bu, resetAt)
+	}
 }
 
 func (m *Manager) BlockedUntil(id string) time.Time {
