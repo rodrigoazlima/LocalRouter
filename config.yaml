@@ -118,7 +118,6 @@ providers:
     api_key: ${GOOGLE_API_KEY}
     recovery_window: 15m
     models:
-      # Ordered by compute power: most capable first (lowest priority = preferred)
       - id: gemini-2.5-flash
         is_free: true
         limits:
@@ -209,7 +208,6 @@ providers:
 #      - id: glm-4-flash
 #        is_free: true
 
-  # --- Next avaliable route is selected based in declaration order if no "priority" set ---
 #  - id: ollama-local
 #    type: ollama
 #    endpoint: http://localhost:11434

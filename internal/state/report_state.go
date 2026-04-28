@@ -119,7 +119,6 @@ type LimitWindowSave struct {
 	ResetAt time.Time `json:"reset_at"`
 }
 
-
 // ProviderState represents the complete state of a provider for reporting
 type ProviderState struct {
 	Name           string            `json:"name"`
@@ -398,9 +397,21 @@ func (sm *StateManager) determineStatus(id string, probe *ProbeResult, outcome *
 		return StatusBlocked
 	}
 
+	// If no probe result is available, check outcome-based status
+	if probe == nil {
+		goto checkOutcome
+	}
+
 	// Check probe status
 	if !probe.Success || (probe.Error != nil && isUnreachableError(probe.Error)) {
 		return StatusUnreachable
+	}
+
+checkOutcome:
+
+	// Handle nil outcome case - default to healthy if no data available
+	if outcome == nil {
+		outcome = &RequestOutcome{ConsecutiveFailures: 0}
 	}
 
 	// Check misconfiguration errors
