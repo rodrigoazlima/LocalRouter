@@ -75,7 +75,8 @@ type ProviderConfig struct {
 	APIKey          string        `yaml:"api_key"`
 	TimeoutMs       int           `yaml:"timeout_ms"`
 	StreamTimeoutMs int           `yaml:"stream_timeout_ms"`
-	ChatPath        string        `yaml:"chat_path"` // overrides default /v1/chat/completions
+	ChatPath        string        `yaml:"chat_path"`         // overrides default /v1/chat/completions
+	HealthCheckPath string        `yaml:"health_check_path"` // overrides default /v1/models
 	RecoveryWindow  string        `yaml:"recovery_window"`
 	Limits          LimitsList    `yaml:"limits"`
 	Models          []ModelConfig `yaml:"models"`

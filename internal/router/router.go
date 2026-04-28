@@ -220,7 +220,7 @@ func (r *Router) Route(ctx context.Context, req *provider.Request) (*provider.Re
 				r.reportState.RecordRequestFailure(p.ID(), err)
 			}
 			r.metrics.Failures.Add(1)
-			if isModelLevelError(err) {
+			if isModelLevelError(err) && !entry.IsRemote {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
 				r.mu.RLock()
 				modelLimits := r.modelLimits
@@ -302,7 +302,7 @@ func (r *Router) Stream(ctx context.Context, req *provider.Request) (string, <-c
 				r.reportState.RecordRequestFailure(p.ID(), err)
 			}
 			r.metrics.Failures.Add(1)
-			if isModelLevelError(err) {
+			if isModelLevelError(err) && !entry.IsRemote {
 				entries = filterEntry(entries, entry.ProviderID, entry.ModelID)
 				r.mu.RLock()
 				modelLimits := r.modelLimits

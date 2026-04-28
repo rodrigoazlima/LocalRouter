@@ -14,15 +14,20 @@ import (
 )
 
 type Adapter struct {
-	id           string
-	endpoint     string
-	apiKey       string
-	chatPath     string
-	client       *http.Client
-	streamClient *http.Client
+	id              string
+	endpoint        string
+	apiKey          string
+	chatPath        string
+	healthCheckPath string
+	client          *http.Client
+	streamClient    *http.Client
 }
 
 func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int, chatPath string) *Adapter {
+	return NewWithHealthPath(id, endpoint, apiKey, timeoutMs, streamTimeoutMs, chatPath, "")
+}
+
+func NewWithHealthPath(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int, chatPath, healthCheckPath string) *Adapter {
 	if timeoutMs <= 0 {
 		timeoutMs = 30000
 	}
@@ -32,13 +37,17 @@ func New(id, endpoint, apiKey string, timeoutMs, streamTimeoutMs int, chatPath s
 	if chatPath == "" {
 		chatPath = "/v1/chat/completions"
 	}
+	if healthCheckPath == "" {
+		healthCheckPath = "/v1/models"
+	}
 	return &Adapter{
-		id:           id,
-		endpoint:     strings.TrimRight(endpoint, "/"),
-		apiKey:       apiKey,
-		chatPath:     chatPath,
-		client:       &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
-		streamClient: &http.Client{Timeout: time.Duration(streamTimeoutMs) * time.Millisecond},
+		id:              id,
+		endpoint:        strings.TrimRight(endpoint, "/"),
+		apiKey:          apiKey,
+		chatPath:        chatPath,
+		healthCheckPath: healthCheckPath,
+		client:          &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond},
+		streamClient:    &http.Client{Timeout: time.Duration(streamTimeoutMs) * time.Millisecond},
 	}
 }
 
@@ -196,7 +205,7 @@ func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan pro
 }
 
 func (a *Adapter) HealthCheck(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.endpoint+a.healthCheckPath, nil)
 	if err != nil {
 		return err
 	}

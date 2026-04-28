@@ -38,6 +38,7 @@ providers:
     type: openai-compatible
     endpoint: https://api.kilo.ai/api/gateway
     chat_path: /chat/completions
+    health_check_path: /models
     api_key: ${KILO_API_KEY}
     limits:
       requests: 20
@@ -53,7 +54,7 @@ providers:
 
   - id: groq-1
     type: openai-compatible
-    endpoint: https://api.groq.com/openai/v1
+    endpoint: https://api.groq.com/openai
     api_key: ${GROQ_API_KEY}
     limits:
       requests: 100
@@ -75,7 +76,7 @@ providers:
 
   - id: nvidia-1
     type: openai-compatible
-    endpoint: https://integrate.api.nvidia.com/v1
+    endpoint: https://integrate.api.nvidia.com
     limits:
       requests: 40
       window: 1m
@@ -93,6 +94,7 @@ providers:
     type: openai-compatible
     endpoint: https://models.github.ai
     chat_path: /inference/chat/completions
+    health_check_path: /catalog
     api_key: ${GITHUB_TOKEN}
     limits:
       requests: 15
@@ -115,7 +117,7 @@ providers:
   # --- Remote: rate-limited direct APIs ---
   - id: mistral-1
     type: openai-compatible
-    endpoint: https://api.mistral.ai/v1
+    endpoint: https://api.mistral.ai
     api_key: ${MISTRAL_API_KEY}
     limits:
       requests: 10
@@ -215,6 +217,8 @@ providers:
   - id: zhipu-1
     type: openai-compatible
     endpoint: https://open.bigmodel.cn/api/paas/v4
+    chat_path: /chat/completions
+    health_check_path: /models
     api_key: ${ZHIPU_API_KEY}
     limits:
       requests: 1
@@ -231,7 +235,7 @@ providers:
 
   - id: cerebras-1
     type: openai-compatible
-    endpoint: https://api.cerebras.ai/v1
+    endpoint: https://api.cerebras.ai
     api_key: ${CEREBRAS_API_KEY}
     limits:
       requests: 30
@@ -245,7 +249,7 @@ providers:
 
   - id: siliconflow-1
     type: openai-compatible
-    endpoint: https://api.siliconflow.cn/v1
+    endpoint: https://api.siliconflow.cn
     api_key: ${SILICONFLOW_API_KEY}
     limits:
       requests: 1000
@@ -261,7 +265,7 @@ providers:
 
   - id: llm7-1
     type: openai-compatible
-    endpoint: https://api.llm7.io/v1
+    endpoint: https://api.llm7.io
     limits:
       requests: 30
       window: 1m

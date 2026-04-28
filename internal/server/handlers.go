@@ -59,6 +59,7 @@ type modelHealthEntry struct {
 
 type healthProviderEntry struct {
 	ID               string             `json:"id"`
+	IsRemote         bool               `json:"is_remote"`
 	State            string             `json:"state"`
 	LatencyMs        int64              `json:"latency_ms,omitempty"`
 	BlockedUntil     *time.Time         `json:"blocked_until,omitempty"`
@@ -76,12 +77,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	snap := s.metrics.Snapshot()
 	providerIDs := s.registry.ProviderIDs()
 
+	remoteIDSet := make(map[string]bool, len(s.registry.RemoteIDs()))
+	for _, id := range s.registry.RemoteIDs() {
+		remoteIDSet[id] = true
+	}
+
 	entries := make([]healthProviderEntry, 0, len(providerIDs))
 	for _, id := range providerIDs {
 		st := s.state.GetState(id)
 		entry := healthProviderEntry{
-			ID:    id,
-			State: st.String(),
+			ID:       id,
+			IsRemote: remoteIDSet[id],
+			State:    st.String(),
 		}
 		if ps, ok := snap.Providers[id]; ok {
 			entry.LatencyMs = ps.LatencyMs

@@ -40,6 +40,7 @@ export interface MetricsSnapshot {
 
 interface RawProvider {
   id: string;
+  is_remote: boolean;
   state: string; // "available" | "blocked" | "exhausted" | "unhealthy"
   latency_ms?: number;
   blocked_until?: string;
@@ -62,7 +63,10 @@ function transformHealth(raw: any): HealthResponse {
   if (Array.isArray(raw?.providers)) {
     const providers: RawProvider[] = raw.providers;
 
-    const remote: RemoteInfo[] = providers
+    const localProviders = providers.filter((p) => !p.is_remote);
+    const remoteProviders = providers.filter((p) => p.is_remote);
+
+    const remote: RemoteInfo[] = remoteProviders
       .filter((p) => p.state !== 'available')
       .map((p) => ({
         id: p.id,
@@ -70,13 +74,13 @@ function transformHealth(raw: any): HealthResponse {
         ttl_remaining: p.blocked_until ? ttlSeconds(p.blocked_until) : undefined,
       }));
 
-    const nodes: NodeInfo[] = providers.map((p) => ({
+    const nodes: NodeInfo[] = localProviders.map((p) => ({
       id: p.id,
       status: mapToNodeStatus(p.state),
       latency_ms: p.latency_ms ?? 0,
     }));
 
-    const anyAvailable = providers.some((p) => p.state === 'available');
+    const anyAvailable = localProviders.some((p) => p.state === 'available');
     const localStatus = anyAvailable ? 'healthy' : 'unavailable';
 
     return { local: { status: localStatus, nodes }, remote };
