@@ -91,11 +91,11 @@ providers:
       window: 1m
     recovery_window: 15m
     models:
-      - id: openai/gpt-5
+      - id: openai/gpt-4o
         is_free: true
-      - id: gpt-4o
+      - id: openai/gpt-4o-mini
         is_free: true
-      - id: meta-llama/llama-4-maverick
+      - id: meta-llama/Llama-4-Maverick-17B-128E-Instruct
         is_free: true
 
   # --- Remote: rate-limited direct APIs ---
