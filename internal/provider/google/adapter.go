@@ -46,7 +46,8 @@ func (a *Adapter) Type() string     { return "google" }
 func (a *Adapter) Endpoint() string { return a.endpoint }
 
 type geminiReq struct {
-	Contents []geminiContent `json:"contents"`
+	Contents          []geminiContent `json:"contents"`
+	SystemInstruction *geminiContent  `json:"systemInstruction,omitempty"`
 }
 type geminiContent struct {
 	Role  string       `json:"role"`
@@ -69,7 +70,7 @@ func (a *Adapter) url(model, action string) string {
 }
 
 func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provider.Response, error) {
-	body, _ := json.Marshal(geminiReq{Contents: toGemini(req.Messages)})
+	body, _ := json.Marshal(buildGeminiReq(req.Messages))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.url(req.Model, "generateContent"), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -101,7 +102,7 @@ func (a *Adapter) Complete(ctx context.Context, req *provider.Request) (*provide
 }
 
 func (a *Adapter) Stream(ctx context.Context, req *provider.Request) (<-chan provider.Chunk, error) {
-	body, _ := json.Marshal(geminiReq{Contents: toGemini(req.Messages)})
+	body, _ := json.Marshal(buildGeminiReq(req.Messages))
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, a.url(req.Model, "streamGenerateContent"), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -180,16 +181,24 @@ func (a *Adapter) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func toGemini(msgs []provider.Message) []geminiContent {
-	out := make([]geminiContent, len(msgs))
-	for i, m := range msgs {
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
+func buildGeminiReq(msgs []provider.Message) geminiReq {
+	var system *geminiContent
+	var contents []geminiContent
+	for _, m := range msgs {
+		switch m.Role {
+		case "system":
+			if system == nil {
+				system = &geminiContent{Role: "user", Parts: []geminiPart{{Text: m.Content}}}
+			} else {
+				system.Parts = append(system.Parts, geminiPart{Text: m.Content})
+			}
+		case "assistant":
+			contents = append(contents, geminiContent{Role: "model", Parts: []geminiPart{{Text: m.Content}}})
+		default:
+			contents = append(contents, geminiContent{Role: m.Role, Parts: []geminiPart{{Text: m.Content}}})
 		}
-		out[i] = geminiContent{Role: role, Parts: []geminiPart{{Text: m.Content}}}
 	}
-	return out
+	return geminiReq{Contents: contents, SystemInstruction: system}
 }
 
 var _ provider.Provider = (*Adapter)(nil)
