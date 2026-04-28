@@ -238,7 +238,7 @@ providers:
       window: 1m
     recovery_window: 10m
     models:
-      - id: llama-3.3-70b
+      - id: qwen-3-235b-a22b-instruct-2507
         is_free: true
       - id: qwen-3-235b
         is_free: true
