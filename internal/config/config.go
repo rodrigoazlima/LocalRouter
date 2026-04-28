@@ -76,8 +76,8 @@ type ProviderConfig struct {
 	TimeoutMs       int           `yaml:"timeout_ms"`
 	StreamTimeoutMs int           `yaml:"stream_timeout_ms"`
 	ChatPath        string        `yaml:"chat_path"` // overrides default /v1/chat/completions
-	RecoveryWindow  string     `yaml:"recovery_window"`
-	Limits          LimitsList `yaml:"limits"`
+	RecoveryWindow  string        `yaml:"recovery_window"`
+	Limits          LimitsList    `yaml:"limits"`
 	Models          []ModelConfig `yaml:"models"`
 	IsRemote        bool          `yaml:"-"` // true for remote providers (new schema)
 	// Skipped is true when api_key was present in the YAML but resolved to empty
@@ -362,11 +362,24 @@ func parseDurations(cfg *Config) error {
 	return nil
 }
 
-// fillPriorities assigns sequential priorities (1, 2, 3, …) to models whose
-// priority is missing, zero, or negative, preserving the order they appear in
-// the config file. Models with an already-valid priority keep their value.
+// fillPriorities assigns sequential priorities (1, 2, 3, …) to models.
+// It collects all model priorities first, finds the maximum existing valid priority,
+// then assigns new sequential priorities starting from max+1 for any missing ones.
 func fillPriorities(cfg *Config) {
-	counter := 1
+	// First pass: find the maximum existing valid priority
+	maxPriority := 0
+	for i := range cfg.Providers {
+		for j := range cfg.Providers[i].Models {
+			if cfg.Providers[i].Models[j].Priority > maxPriority {
+				maxPriority = cfg.Providers[i].Models[j].Priority
+			}
+		}
+	}
+
+	// Start from maxPriority + 1 for new assignments
+	counter := maxPriority + 1
+
+	// Second pass: assign sequential priorities to models with invalid values
 	for i := range cfg.Providers {
 		for j := range cfg.Providers[i].Models {
 			m := &cfg.Providers[i].Models[j]

@@ -265,15 +265,20 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Determine priority and isRemote for this provider.
-	// Check anyModel first, then fall back to existing explicit config entries.
-	var priority int
+	// Find the maximum priority across all existing entries to ensure global uniqueness
+	maxPriority := 0
+	for _, e := range r.all {
+		if !e.IsDiscovered && e.Priority > maxPriority {
+			maxPriority = e.Priority
+		}
+	}
+
+	// Determine isRemote for this provider (priority will be assigned sequentially)
 	var isRemote bool
 	found := false
 
 	for _, a := range r.anyModel {
 		if a.ProviderID == providerID {
-			priority = a.Priority
 			isRemote = a.IsRemote
 			found = true
 			break
@@ -281,14 +286,11 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 	}
 
 	if !found {
-		// Provider has explicit config entries — use their max priority and isRemote.
 		for _, e := range r.byProvider[providerID] {
 			if !e.IsDiscovered {
-				if e.Priority > priority {
-					priority = e.Priority
-				}
 				isRemote = e.IsRemote
 				found = true
+				break
 			}
 		}
 	}
@@ -315,20 +317,33 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 	}
 	r.all = filtered
 
-	// Add new discovered models, skipping any already in config.
+	// Assign sequential priorities starting from maxPriority + 1 for discovered models.
+	discoveredCount := 0
 	for _, modelID := range modelIDs {
 		if configModels[modelID] {
 			continue
 		}
-		r.all = append(r.all, Entry{
+		discoveredCount++
+	}
+
+	newEntries := make([]Entry, 0, discoveredCount)
+	currentPriority := maxPriority + 1
+	for _, modelID := range modelIDs {
+		if configModels[modelID] {
+			continue
+		}
+		newEntries = append(newEntries, Entry{
 			ProviderID:   providerID,
 			ModelID:      modelID,
-			Priority:     priority,
+			Priority:     currentPriority,
 			IsDefault:    modelID == defaultModel,
 			IsRemote:     isRemote,
 			IsDiscovered: true,
 		})
+		currentPriority++
 	}
+
+	r.all = append(r.all, newEntries...)
 
 	sort.Slice(r.all, func(i, j int) bool {
 		return entryLess(r.all[i], r.all[j])
