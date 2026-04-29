@@ -412,11 +412,18 @@ func runDiscovery(configPath string, networkDiscover bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Discover providers from environment variables
+	// Step 1: Discover providers from environment variables
 	envProviders := discovery.DiscoverFromEnv()
 	log.Printf("[DISCOVER] found %d providers from environment", len(envProviders))
 
-	// Discover LocalRouter instances on network if requested
+	// Step 2: Fetch available models dynamically from each provider's endpoint
+	providerModels, err := discovery.DiscoverModelsForProviders(ctx, envProviders)
+	if err != nil {
+		return fmt.Errorf("discover models: %w", err)
+	}
+	log.Printf("[DISCOVER] fetched models for %d providers", len(providerModels))
+
+	// Step 3: Discover LocalRouter instances on network if requested
 	var networkInstances []discovery.LocalRouterInstance
 	if networkDiscover {
 		log.Printf("[DISCOVER] scanning local network for other LocalRouter instances...")
@@ -429,12 +436,12 @@ func runDiscovery(configPath string, networkDiscover bool) error {
 		}
 	}
 
-	// Generate config file
+	// Step 4: Generate config file with dynamically discovered models
 	if len(networkInstances) > 0 {
-		if err := discovery.GenerateConfigFromDiscovery(envProviders, networkInstances, configPath); err != nil {
+		if err := discovery.GenerateConfigFromDiscovery(providerModels, networkInstances, configPath); err != nil {
 			return fmt.Errorf("generate config: %w", err)
 		}
-	} else if err := discovery.GenerateConfigFromEnv(envProviders, configPath); err != nil {
+	} else if err := discovery.GenerateConfigFromEnv(providerModels, configPath); err != nil {
 		return fmt.Errorf("generate config: %w", err)
 	}
 

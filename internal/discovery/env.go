@@ -1,23 +1,30 @@
 package discovery
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
-	"strings"
+	"time"
 )
 
 // EnvProvider represents a provider discoverable via environment variable
 type EnvProvider struct {
-	ID             string
-	Type           string
-	EnvVar         string
-	Endpoint       string
-	Priority       int
-	IsFree         bool
-	Models         []string
-	RecoveryWindow string
-	TimeoutMs      int
-	ChatPath       string
+	ID             string `json:"id"`
+	Type           string `json:"type"`
+	EnvVar         string `json:"env_var"`
+	Endpoint       string `json:"endpoint"`
+	Priority       int    `json:"priority"`
+	IsFree         bool   `json:"is_free"`
+	RecoveryWindow string `json:"recovery_window"`
+	TimeoutMs      int    `json:"timeout_ms"`
+}
+
+// ProviderModels contains provider info and its discovered models
+type ProviderModels struct {
+	Provider EnvProvider `json:"provider"`
+	Models   []string    `json:"models"`
 }
 
 var envProviders = []EnvProvider{
@@ -25,62 +32,41 @@ var envProviders = []EnvProvider{
 		ID:             "openrouter",
 		Type:           "openai-compatible",
 		EnvVar:         "OPENROUTER_API_KEY",
-		Endpoint:       "https://openrouter.ai/api",
+		Endpoint:       "https://openrouter.ai/api/v1",
 		Priority:       10,
 		IsFree:         true,
-		Models:         []string{"openrouter/free", "openrouter/auto"},
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
 	},
 	{
-		ID:       "groq",
-		Type:     "openai-compatible",
-		EnvVar:   "GROQ_API_KEY",
-		Endpoint: "https://api.groq.com/openai/v1",
-		Priority: 20,
-		IsFree:   true,
-		Models: []string{
-			"llama-3.1-8b-instant",
-			"llama-3.3-70b-versatile",
-			"llama-4-scout-17b-16e-instruct",
-			"llama-4-maverick-17b-128e-instruct",
-			"deepseek-r1-distill-llama-70b",
-			"qwen-qwq-32b",
-		},
+		ID:             "groq",
+		Type:           "openai-compatible",
+		EnvVar:         "GROQ_API_KEY",
+		Endpoint:       "https://api.groq.com/openai/v1",
+		Priority:       20,
+		IsFree:         true,
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
 	{
-		ID:       "nvidia",
-		Type:     "openai-compatible",
-		EnvVar:   "NVIDIA_API_KEY",
-		Endpoint: "https://integrate.api.nvidia.com/v1",
-		Priority: 30,
-		IsFree:   false,
-		Models: []string{
-			"mistralai/devstral-2-123b-instruct-2512",
-		},
+		ID:             "nvidia",
+		Type:           "openai-compatible",
+		EnvVar:         "NVIDIA_API_KEY",
+		Endpoint:       "https://integrate.api.nvidia.com/v1",
+		Priority:       30,
+		IsFree:         false,
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
 	{
-		ID:       "github",
-		Type:     "openai-compatible",
-		EnvVar:   "GITHUB_TOKEN",
-		Endpoint: "https://models.github.ai",
-		Priority: 40,
-		IsFree:   true,
-		Models: []string{
-			"openai/gpt-4.1",
-			"openai/gpt-4o",
-			"openai/gpt-4o-mini",
-			"openai/o4-mini",
-			"openai/o3-mini",
-			"meta-llama/Llama-4-Maverick-17B-128E-Instruct",
-		},
+		ID:             "github",
+		Type:           "openai-compatible",
+		EnvVar:         "GITHUB_TOKEN",
+		Endpoint:       "https://models.github.ai/v1",
+		Priority:       40,
+		IsFree:         true,
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
-		ChatPath:       "/inference/chat/completions",
 	},
 	{
 		ID:             "mistral",
@@ -89,7 +75,6 @@ var envProviders = []EnvProvider{
 		Endpoint:       "https://api.mistral.ai/v1",
 		Priority:       50,
 		IsFree:         true,
-		Models:         []string{"mistral-small-latest", "open-mistral-nemo", "codestral-latest"},
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
 	},
@@ -97,10 +82,9 @@ var envProviders = []EnvProvider{
 		ID:             "cohere",
 		Type:           "cohere",
 		EnvVar:         "COHERE_API_KEY",
-		Endpoint:       "https://api.cohere.com/",
+		Endpoint:       "https://api.cohere.com/v1",
 		Priority:       60,
 		IsFree:         true,
-		Models:         []string{"command-a-03-2025", "command-r7b-12-2024"},
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
 	},
@@ -111,7 +95,6 @@ var envProviders = []EnvProvider{
 		Endpoint:       "https://open.bigmodel.cn/api/paas/v4",
 		Priority:       70,
 		IsFree:         true,
-		Models:         []string{"glm-4-flash", "glm-4.5-flash", "glm-4.7-flash"},
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
 	},
@@ -122,36 +105,26 @@ var envProviders = []EnvProvider{
 		Endpoint:       "https://api.cerebras.ai/v1",
 		Priority:       80,
 		IsFree:         true,
-		Models:         []string{"qwen-3-235b-a22b-instruct-2507", "qwen-3-235b"},
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
 	{
-		ID:       "siliconflow",
-		Type:     "openai-compatible",
-		EnvVar:   "SILICONFLOW_API_KEY",
-		Endpoint: "https://api.siliconflow.cn/v1",
-		Priority: 90,
-		IsFree:   true,
-		Models: []string{
-			"Qwen/Qwen3-8B",
-			"deepseek-ai/DeepSeek-R1",
-			"deepseek-ai/DeepSeek-V3",
-		},
+		ID:             "siliconflow",
+		Type:           "openai-compatible",
+		EnvVar:         "SILICONFLOW_API_KEY",
+		Endpoint:       "https://api.siliconflow.cn/v1",
+		Priority:       90,
+		IsFree:         true,
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
 	{
-		ID:       "google",
-		Type:     "google",
-		EnvVar:   "GOOGLE_API_KEY",
-		Endpoint: "",
-		Priority: 100,
-		IsFree:   true,
-		Models: []string{
-			"gemini-2.5-flash", "gemini-3-flash", "gemma-4-31b-it", "gemma-4-26b-a4b-it",
-			"gemini-2.5-flash-lite", "gemini-3.1-flash-lite", "gemma-3-27b-it", "gemma-3-12b-it", "gemma-3-4b-it",
-		},
+		ID:             "google",
+		Type:           "google",
+		EnvVar:         "GOOGLE_API_KEY",
+		Endpoint:       "",
+		Priority:       100,
+		IsFree:         true,
 		RecoveryWindow: "15m",
 		TimeoutMs:      30000,
 	},
@@ -162,7 +135,6 @@ var envProviders = []EnvProvider{
 		Endpoint:       "",
 		Priority:       110,
 		IsFree:         false,
-		Models:         []string{"claude-3-5-haiku-20241022"},
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
@@ -173,18 +145,6 @@ var envProviders = []EnvProvider{
 		Endpoint:       "https://api.deepseek.com/v1",
 		Priority:       120,
 		IsFree:         false,
-		Models:         []string{"deepseek-chat"},
-		RecoveryWindow: "10m",
-		TimeoutMs:      30000,
-	},
-	{
-		ID:             "ollama-cloud",
-		Type:           "ollama",
-		EnvVar:         "OLLAMA_API_KEY",
-		Endpoint:       "https://ollama.com",
-		Priority:       130,
-		IsFree:         true,
-		Models:         []string{"qwen3-coder:480b-cloud", "gpt-oss:120b"},
 		RecoveryWindow: "10m",
 		TimeoutMs:      30000,
 	},
@@ -201,59 +161,113 @@ func DiscoverFromEnv() []EnvProvider {
 	return discovered
 }
 
-// FormatAsYAML returns the provider config formatted as YAML snippet.
-func (p EnvProvider) FormatAsYAML() string {
-	var lines []string
-	lines = append(lines, fmt.Sprintf("  - id: %s", p.ID))
-	lines = append(lines, fmt.Sprintf("    type: %s", p.Type))
-	if p.Endpoint != "" {
-		lines = append(lines, fmt.Sprintf("    endpoint: %s", p.Endpoint))
-	}
-	lines = append(lines, fmt.Sprintf("    api_key: ${%s}", p.EnvVar))
-	if p.ChatPath != "" {
-		lines = append(lines, fmt.Sprintf("    chat_path: %s", p.ChatPath))
-	}
-	lines = append(lines, fmt.Sprintf("    recovery_window: %s", p.RecoveryWindow))
-	lines = append(lines, "    models:")
+// FetchModels fetches available models from a provider's endpoint.
+func FetchModels(ctx context.Context, provider *EnvProvider) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 
-	for i, model := range p.Models {
-		prefix := "      - id:"
-		if i >= len(p.Models)-1 {
-			prefix = "        id:" // last item gets different indentation
-		}
-		lines = append(lines, fmt.Sprintf("%s %s", prefix, model))
+	if provider.Endpoint == "" {
+		// Providers without endpoints (like Google, Anthropic) return empty model list
+		return []string{}, nil
 	}
 
-	return strings.Join(lines, "\n")
+	url := fmt.Sprintf("%s/models", provider.Endpoint)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var models []string
+
+	switch provider.Type {
+	case "openai-compatible":
+		models, err = parseOpenAIModels(resp)
+	case "ollama":
+		models, err = parseOllamaModels(resp)
+	default:
+		models, err = parseOpenAIModels(resp)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("parse models: %w", err)
+	}
+
+	return models, nil
 }
 
-// FormatAsYAMLFull returns the provider config formatted as YAML snippet with full details.
-func (p EnvProvider) FormatAsYAMLFull() string {
-	var lines []string
-	lines = append(lines, fmt.Sprintf("  - id: %s", p.ID))
-	lines = append(lines, fmt.Sprintf("    type: %s", p.Type))
-	if p.Endpoint != "" {
-		lines = append(lines, fmt.Sprintf("    endpoint: %s", p.Endpoint))
+// parseOpenAIModels parses models from an OpenAI-compatible /v1/models response.
+func parseOpenAIModels(resp *http.Response) ([]string, error) {
+	var result struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			OwnedBy string `json:"owned_by"`
+			Deleted bool   `json:"deleted,omitempty"`
+			Root    string `json:"root"`
+			Parent  string `json:"parent,omitempty"`
+		} `json:"data"`
 	}
-	lines = append(lines, fmt.Sprintf("    api_key: ${%s}", p.EnvVar))
-	if p.ChatPath != "" {
-		lines = append(lines, fmt.Sprintf("    chat_path: %s", p.ChatPath))
-	}
-	lines = append(lines, fmt.Sprintf("    timeout_ms: %d", p.TimeoutMs))
-	lines = append(lines, fmt.Sprintf("    recovery_window: %s", p.RecoveryWindow))
-	if p.IsFree {
-		lines = append(lines, "    limits:")
-		lines = append(lines, "      requests: 100")
-		lines = append(lines, "      window: 1m")
-	}
-	lines = append(lines, "    models:")
 
-	for _, model := range p.Models {
-		lines = append(lines, fmt.Sprintf("      - id: %s", model))
-		if p.IsFree {
-			lines = append(lines, "        is_free: true")
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	models := make([]string, 0)
+	for _, m := range result.Data {
+		if !m.Deleted && m.ID != "" {
+			models = append(models, m.ID)
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	return models, nil
+}
+
+// parseOllamaModels parses models from an Ollama /api/tags response.
+func parseOllamaModels(resp *http.Response) ([]string, error) {
+	var result struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	models := make([]string, 0, len(result.Models))
+	for _, m := range result.Models {
+		if m.Name != "" {
+			models = append(models, m.Name)
+		}
+	}
+
+	return models, nil
+}
+
+// DiscoverModelsForProviders discovers available models for each provider.
+func DiscoverModelsForProviders(ctx context.Context, providers []EnvProvider) ([]ProviderModels, error) {
+	results := make([]ProviderModels, 0, len(providers))
+
+	for _, p := range providers {
+		models, err := FetchModels(ctx, &p)
+		if err != nil {
+			return nil, fmt.Errorf("fetch models for %s: %w", p.ID, err)
+		}
+		results = append(results, ProviderModels{
+			Provider: p,
+			Models:   models,
+		})
+	}
+
+	return results, nil
 }
