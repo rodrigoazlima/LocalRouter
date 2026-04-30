@@ -26,6 +26,8 @@ import (
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
+
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
 	port := flag.String("port", "8080", "HTTP listen port")
 	discover := flag.Bool("discover", false, "enable discovery mode: discover providers and generate config")
