@@ -265,27 +265,30 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Find the maximum priority across all existing entries to ensure global uniqueness
-	maxPriority := 0
-	for _, e := range r.all {
-		if !e.IsDiscovered && e.Priority > maxPriority {
-			maxPriority = e.Priority
-		}
-	}
-
-	// Determine isRemote for this provider (priority will be assigned sequentially)
+	// Determine isRemote and basePriority.
+	// For anyModel providers, use their registered priority so that config-defined provider
+	// ordering is preserved when multiple providers discover the same model concurrently.
 	var isRemote bool
+	var basePriority int
 	found := false
 
 	for _, a := range r.anyModel {
 		if a.ProviderID == providerID {
 			isRemote = a.IsRemote
+			basePriority = a.Priority
 			found = true
 			break
 		}
 	}
 
 	if !found {
+		// Provider has explicit config models; compute max non-discovered priority.
+		maxPriority := 0
+		for _, e := range r.all {
+			if !e.IsDiscovered && e.Priority > maxPriority {
+				maxPriority = e.Priority
+			}
+		}
 		for _, e := range r.byProvider[providerID] {
 			if !e.IsDiscovered {
 				isRemote = e.IsRemote
@@ -293,10 +296,10 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 				break
 			}
 		}
-	}
-
-	if !found {
-		return // unknown provider
+		if !found {
+			return // unknown provider
+		}
+		basePriority = maxPriority + 1
 	}
 
 	// Build set of config-defined model IDs for this provider (IsDiscovered=false).
@@ -327,7 +330,7 @@ func (r *Registry) SetDiscoveredModels(providerID string, modelIDs []string, def
 	}
 
 	newEntries := make([]Entry, 0, discoveredCount)
-	currentPriority := maxPriority + 1
+	currentPriority := basePriority
 	for _, modelID := range modelIDs {
 		if configModels[modelID] {
 			continue
