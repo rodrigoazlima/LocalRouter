@@ -469,14 +469,21 @@ test/e2e/              # Playwright end-to-end tests
 - [x] `model=auto` global fallback chain
 - [x] Hot-reload configuration without downtime
 - [x] State persistence across restarts
-- [x] HTML `/report` dashboard with error diagnostics
+- [x] Enpoint `/report` with error diagnostics
 - [x] Auto-discovery from environment variables
 - [x] LAN discovery for LocalRouter instances
 - [x] Windows service installer
+- [ ] `model=small` global fallback chain focused in fast and low complexity tasks
+- [ ] `model=medium` global fallback chain focused in average tasks
+- [ ] `model=big` global fallback chain focused in high complexity tasks
+- [ ] Limits for context size acording to prompt
+- [ ] Convert /report into json format
+- [ ] Prompt compressions compatibility
+- [ ] Strategy for model compatibility
 - [ ] Web UI for real-time provider dashboard
 - [ ] Prometheus `/metrics` endpoint
 - [ ] Request cost tracking and budget limits
-- [ ] Plugin system for custom routing strategies
+- [ ] System for custom routing strategies
 
 See [open issues](https://github.com/rodrigoazlima/localrouter/issues) for proposed features and known issues.
 
