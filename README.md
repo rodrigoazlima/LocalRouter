@@ -481,6 +481,10 @@ test/e2e/              # Playwright end-to-end tests
 - [ ] Prompt compressions compatibility
 - [ ] Strategy for model compatibility
 - [ ] Web UI for real-time provider dashboard
+- [ ] Test integration with with Cline
+- [ ] Test integration with with Code
+- [ ] Test integration with with Open Code
+- [ ] Test integration with with Kilo
 - [ ] Prometheus `/metrics` endpoint
 - [ ] Request cost tracking and budget limits
 - [ ] System for custom routing strategies
