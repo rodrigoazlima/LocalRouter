@@ -16,6 +16,16 @@ routing:
 
 providers:
 
+  - id: optimized-llamacpp-local-2
+    type: openai-compatible
+    endpoint: http://localhost:11434
+    timeout_ms: 30000
+    stream_timeout_ms: 3600000
+    recovery_window: 2m
+    models:
+      - id: qwen3-coder-30b:latest
+        is_free: true
+
   - id: openrouter-1
     type: openai-compatible
     endpoint: https://openrouter.ai/api
@@ -300,15 +310,15 @@ providers:
 #      - id: qwen3-coder-next
 #        is_free: true
 
-  - id: optimized-llamacpp-local-2
-    type: openai-compatible
-    endpoint: http://localhost:8081
-    timeout_ms: 30000
-    stream_timeout_ms: 3600000
-    recovery_window: 2m
-    models:
-      - id: qwen
-        is_free: true
+#  - id: optimized-llamacpp-local-2
+#    type: openai-compatible
+#    endpoint: http://localhost:11434
+#    timeout_ms: 30000
+#    stream_timeout_ms: 3600000
+#    recovery_window: 2m
+#    models:
+#      - id: qwen3-coder-30b:latest
+#        is_free: true
 
   - id: lmstudio-local
     type: openai-compatible
