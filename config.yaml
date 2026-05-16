@@ -25,6 +25,8 @@ providers:
     timeout_ms: 30000
     stream_timeout_ms: 3600000
     recovery_window: 2m
+    limits:
+      concurrent_requests: 1          # allow only 1 in-flight request
     models:
       - id: qwen3-coder-30b:latest
         is_free: true
