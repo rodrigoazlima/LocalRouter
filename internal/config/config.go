@@ -15,11 +15,17 @@ import (
 //   - New (no version): local.nodes + remote.providers, no models required.
 type Config struct {
 	Version   int              `yaml:"version"`
+	Server    ServerConfig     `yaml:"server"`
 	Routing   RoutingConfig    `yaml:"routing"`
 	Logging   LoggingConfig    `yaml:"logging"`
 	Providers []ProviderConfig `yaml:"providers"` // old schema; populated by normaliseNewSchema for new schema
 	Local     LocalConfig      `yaml:"local"`     // new schema
 	Remote    RemoteConfig     `yaml:"remote"`    // new schema
+}
+
+// ServerConfig holds HTTP server settings.
+type ServerConfig struct {
+	Port int `yaml:"port"`
 }
 
 // LoggingConfig controls log verbosity.

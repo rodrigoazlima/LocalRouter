@@ -29,7 +29,7 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
-	port := flag.String("port", "8080", "HTTP listen port")
+	port := flag.String("port", "", "HTTP listen port (overrides config; default 8080)")
 	discover := flag.Bool("discover", false, "enable discovery mode: discover providers and generate config")
 	networkDiscover := flag.Bool("network-discover", false, "discover other LocalRouter instances on local network")
 	flag.Parse()
@@ -133,8 +133,17 @@ func main() {
 	// Router uses original state manager for routing decisions
 	r := router.New(providers, reg, st, sr, lim, modelLim, m, rCfg)
 
+	// Resolve listen port: flag > config > default 8080
+	listenPort := *port
+	if listenPort == "" && cfg.Server.Port > 0 {
+		listenPort = strconv.Itoa(cfg.Server.Port)
+	}
+	if listenPort == "" {
+		listenPort = "8080"
+	}
+
 	// Server needs the new StateManager for reporting
-	srv := server.NewWithReport(r, mon, st, sr, reg, m, lim, modelLim, ":"+*port)
+	srv := server.NewWithReport(r, mon, st, sr, reg, m, lim, modelLim, ":"+listenPort)
 
 	watcher, err := config.NewWatcher(*cfgPath, cfg, func(oldCfg, newCfg *config.Config) {
 		newProviders, newLimCfgs, newModelLimCfgs, newRecWindows, err := buildProviders(newCfg, mon)
